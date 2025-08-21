@@ -1,0 +1,56 @@
+{
+  "server": {
+    "name": "My MCP Server",
+    "version": "1.0.0",
+    "description": "我的 MCP 服务器项目 - 功能丰富的示例",
+    "port": 8080,
+    "debug": false,
+    "host": "localhost"
+  },
+  "features": {
+    "file_operations": true,
+    "data_processing": true,
+    "web_requests": true,
+    "system_info": true,
+    "task_management": true,
+    "note_taking": true
+  },
+  "limits": {
+    "max_file_size": 10485760,
+    "max_files_per_operation": 100,
+    "request_timeout": 30,
+    "max_tasks": 1000,
+    "max_notes": 500
+  },
+  "security": {
+    "allowed_file_extensions": [
+      ".txt", ".json", ".csv", ".md", ".py", ".js", ".html", ".css", ".xml", ".yaml", ".yml"
+    ],
+    "blocked_directories": [
+      "/etc", "/sys", "/proc", "/dev", "/root"
+    ],
+    "enable_cors": true,
+    "cors_origins": ["*"]
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "logs/server.log",
+    "max_size": 10485760,
+    "backup_count": 5,
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  },
+  "data": {
+    "auto_save": true,
+    "save_interval": 300,
+    "backup_enabled": true,
+    "backup_interval": 3600,
+    "max_backups": 10
+  },
+  "performance": {
+    "cache_enabled": true,
+    "cache_size": 100,
+    "cache_ttl": 3600,
+    "async_operations": true,
+    "worker_threads": 4
+  }
+}

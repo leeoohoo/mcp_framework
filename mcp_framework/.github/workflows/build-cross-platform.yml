@@ -1,0 +1,105 @@
+name: MCP Framework Cross-Platform Build
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.11']
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        pip install -r requirements.txt
+    
+    - name: Install MCP Framework in development mode
+      run: |
+        pip install -e .
+    
+    - name: Run tests
+      run: |
+        python test_package.py
+    
+    - name: Build executables
+      run: |
+        python mcp_framework/build.py --no-test
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: mcp-framework-${{ matrix.os }}
+        path: dist/
+        retention-days: 30
+    
+    - name: List built files
+      run: |
+        echo "Built files:"
+        ls -la dist/
+  
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          mcp-framework-ubuntu-latest/**/*
+          mcp-framework-windows-latest/**/*
+          mcp-framework-macos-latest/**/*
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker-build:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Linux Docker image
+      run: |
+        docker build -f Dockerfile.linux -t mcp-framework-linux .
+    
+    - name: Test Docker build
+      run: |
+        mkdir -p dist
+        docker run --rm -v $(pwd)/dist:/app/dist mcp-framework-linux --no-test
+    
+    - name: Upload Docker build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: mcp-framework-docker-linux
+        path: dist/
+        retention-days: 30

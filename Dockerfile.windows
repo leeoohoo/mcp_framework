@@ -1,0 +1,17 @@
+# MCP Framework Windows 构建环境 Dockerfile
+FROM python:3.11-windowsservercore
+
+# 设置工作目录
+WORKDIR /app
+
+# 安装构建依赖
+RUN pip install --no-cache-dir pyinstaller
+
+# 复制项目文件
+COPY . .
+
+# 安装项目依赖
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 设置构建脚本为入口点
+ENTRYPOINT ["python", "mcp_framework/build.py"]

@@ -1,0 +1,706 @@
+#!/usr/bin/env python3
+"""
+MCP 框架基础类定义
+"""
+
+import logging
+from abc import ABC, abstractmethod
+from typing import Dict, List, Any, Optional, AsyncGenerator, Callable, Set
+from dataclasses import dataclass
+import inspect
+import asyncio
+import uuid
+
+from .config import ServerParameter, ServerConfigManager
+from .utils import get_data_dir
+
+
+@dataclass
+class MCPTool:
+    """MCP 工具定义"""
+    name: str
+    description: str
+    input_schema: Dict[str, Any]
+    # 移除 supports_streaming，所有工具都默认支持流式
+    chunk_size: int = 100  # 新增：非流式工具的自动分割大小（字符数）
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'name': self.name,
+            'description': self.description,
+            'inputSchema': self.input_schema,
+            'supportsStreaming': True,  # 所有工具都支持流式
+            'chunkSize': self.chunk_size
+        }
+
+
+@dataclass
+class MCPResource:
+    """MCP 资源定义"""
+    uri: str
+    name: str
+    description: str
+    mime_type: str = 'text/plain'
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'uri': self.uri,
+            'name': self.name,
+            'description': self.description,
+            'mimeType': self.mime_type
+        }
+
+
+class BaseMCPServer(ABC):
+    """MCP 服务器基类"""
+
+    def __init__(self, name: str, version: str = "1.0.0", description: str = ""):
+        self.name = name
+        self.version = version
+        self.description = description
+        self.tools: List[MCPTool] = []
+        self.resources: List[MCPResource] = []
+        self._initialized = False
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.data_dir = get_data_dir()
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+
+        # 服务器运行时配置
+        self.server_config: Dict[str, Any] = {}
+
+        # 添加配置管理器
+        self.server_config_manager = ServerConfigManager(name)
+
+        # 流式停止管理
+        self._streaming_sessions: Set[str] = set()  # 活跃的流式会话ID
+        self._stop_streaming: bool = False  # 全局停止标志
+        self._session_stop_flags: Dict[str, bool] = {}  # 单个会话停止标志
+
+        # 尝试加载已保存的配置
+        saved_config = self.server_config_manager.load_server_config()
+        if saved_config:
+            self.configure_server(saved_config)
+
+    @abstractmethod
+    async def initialize(self) -> None:
+        """初始化服务器，子类必须实现"""
+        pass
+
+    @abstractmethod
+    async def handle_tool_call(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+        """处理工具调用，子类必须实现"""
+        pass
+
+    @abstractmethod
+    def get_server_parameters(self) -> List[ServerParameter]:
+        """获取服务器配置参数定义，子类必须实现"""
+        pass
+
+    async def handle_resource_request(self, uri: str) -> Dict[str, Any]:
+        """处理资源请求，子类可以重写"""
+        raise NotImplementedError(f"Resource not found: {uri}")
+
+    def _validate_arguments(self, tool_name: str, arguments: Dict[str, Any], input_schema: Dict[str, Any]) -> None:
+        """验证工具调用参数的类型和值"""
+        properties = input_schema.get('properties', {})
+        required = input_schema.get('required', [])
+        
+        # 检查必需参数
+        for param_name in required:
+            if param_name not in arguments:
+                raise ValueError(f"Tool '{tool_name}' missing required parameter: {param_name}")
+        
+        # 验证参数类型
+        for param_name, value in arguments.items():
+            if param_name in properties:
+                param_spec = properties[param_name]
+                param_type = param_spec.get('type', 'string')
+                
+                # 类型验证
+                if not self._validate_parameter_type(value, param_type):
+                    raise TypeError(f"Tool '{tool_name}' parameter '{param_name}' expected {param_type}, got {type(value).__name__}")
+                
+                # 数值范围验证
+                if param_type in ['integer', 'number']:
+                    minimum = param_spec.get('minimum')
+                    maximum = param_spec.get('maximum')
+                    if minimum is not None and value < minimum:
+                        raise ValueError(f"Tool '{tool_name}' parameter '{param_name}' value {value} is below minimum {minimum}")
+                    if maximum is not None and value > maximum:
+                        raise ValueError(f"Tool '{tool_name}' parameter '{param_name}' value {value} is above maximum {maximum}")
+                
+                # 枚举值验证
+                enum_values = param_spec.get('enum')
+                if enum_values and value not in enum_values:
+                    raise ValueError(f"Tool '{tool_name}' parameter '{param_name}' value '{value}' not in allowed values: {enum_values}")
+    
+    def _validate_parameter_type(self, value: Any, expected_type: str) -> bool:
+        """验证参数类型是否匹配"""
+        if expected_type == 'string':
+            return isinstance(value, str)
+        elif expected_type == 'integer':
+            return isinstance(value, int) and not isinstance(value, bool)
+        elif expected_type == 'number':
+            return isinstance(value, (int, float)) and not isinstance(value, bool)
+        elif expected_type == 'boolean':
+            return isinstance(value, bool)
+        elif expected_type == 'array':
+            return isinstance(value, list)
+        elif expected_type == 'object':
+            return isinstance(value, dict)
+        else:
+            return True  # 未知类型，跳过验证
+    
+    # 流式停止管理方法
+    def start_streaming_session(self) -> str:
+        """启动一个新的流式会话，返回会话ID"""
+        session_id = str(uuid.uuid4())
+        self._streaming_sessions.add(session_id)
+        self._session_stop_flags[session_id] = False
+        self.logger.debug(f"Started streaming session: {session_id}")
+        return session_id
+    
+    def stop_streaming_session(self, session_id: str) -> bool:
+        """停止指定的流式会话"""
+        if session_id in self._streaming_sessions:
+            self._session_stop_flags[session_id] = True
+            self.logger.info(f"Stopped streaming session: {session_id}")
+            return True
+        return False
+    
+    def stop_all_streaming(self) -> None:
+        """停止所有流式输出"""
+        self._stop_streaming = True
+        # 同时停止所有活跃会话
+        for session_id in self._streaming_sessions:
+            self._session_stop_flags[session_id] = True
+        self.logger.info("Stopped all streaming sessions")
+    
+    def resume_streaming(self) -> None:
+        """恢复流式输出（清除全局停止标志）"""
+        self._stop_streaming = False
+        self.logger.info("Resumed streaming")
+    
+    def is_streaming_stopped(self, session_id: str = None) -> bool:
+        """检查流式输出是否应该停止"""
+        # 检查全局停止标志
+        if self._stop_streaming:
+            return True
+        
+        # 检查特定会话停止标志
+        if session_id and session_id in self._session_stop_flags:
+            return self._session_stop_flags[session_id]
+        
+        return False
+    
+    def cleanup_streaming_session(self, session_id: str) -> None:
+        """清理流式会话"""
+        self._streaming_sessions.discard(session_id)
+        self._session_stop_flags.pop(session_id, None)
+        self.logger.debug(f"Cleaned up streaming session: {session_id}")
+    
+    def get_active_streaming_sessions(self) -> List[str]:
+        """获取所有活跃的流式会话ID"""
+        return list(self._streaming_sessions)
+    
+    async def handle_tool_call_stream(self, tool_name: str, arguments: Dict[str, Any], session_id: str = None) -> AsyncGenerator[str, None]:
+        """
+        统一的流式工具调用处理器
+        所有工具都通过此方法输出流式数据
+        """
+        # 如果没有提供session_id，自动创建一个
+        if session_id is None:
+            session_id = self.start_streaming_session()
+        
+        try:
+            # 尝试调用子类的流式实现
+            has_streaming_impl = hasattr(self, '_stream_handlers') and tool_name in getattr(self, '_stream_handlers', {})
+            
+            if has_streaming_impl:
+                # 使用子类的流式实现
+                async for chunk in self._handle_streaming_tool_call(tool_name, arguments, session_id):
+                    # 检查是否应该停止
+                    if self.is_streaming_stopped(session_id):
+                        self.logger.info(f"Streaming stopped for session {session_id}")
+                        break
+                    yield chunk
+            else:
+                # 普通工具：先调用普通方法，然后自动分割为流式输出
+                result = await self.handle_tool_call(tool_name, arguments)
+                async for chunk in self._auto_chunk_result(result, tool_name, session_id):
+                    # 检查是否应该停止
+                    if self.is_streaming_stopped(session_id):
+                        self.logger.info(f"Streaming stopped for session {session_id}")
+                        break
+                    yield chunk
+        finally:
+            # 清理会话
+            if session_id:
+                self.cleanup_streaming_session(session_id)
+
+    async def _handle_streaming_tool_call(self, tool_name: str, arguments: Dict[str, Any], session_id: str = None) -> AsyncGenerator[str, None]:
+        """
+        处理真正支持流式输出的工具调用，子类应该重写此方法
+        """
+        # 默认回退到普通调用 + 自动分割
+        result = await self.handle_tool_call(tool_name, arguments)
+        async for chunk in self._auto_chunk_result(result, tool_name, session_id):
+            yield chunk
+
+    async def _auto_chunk_result(self, result: Any, tool_name: str, session_id: str = None) -> AsyncGenerator[str, None]:
+        """
+        自动将结果分割为流式块
+        """
+        # 获取工具的分割大小设置
+        tool = next((t for t in self.tools if t.name == tool_name), None)
+        chunk_size = tool.chunk_size if tool else 100
+        
+        # 转换结果为字符串
+        result_str = str(result)
+        
+        # 如果结果很短，直接输出
+        if len(result_str) <= chunk_size:
+            yield result_str
+            return
+        
+        # 分割长文本
+        self.logger.debug(f"Auto-chunking result for {tool_name}: {len(result_str)} chars into {chunk_size}-char chunks")
+        
+        # 按行分割优先，避免破坏句子结构
+        lines = result_str.split('\n')
+        current_chunk = ""
+        
+        for line in lines:
+            # 如果当前行加上已有内容超过块大小
+            if len(current_chunk) + len(line) + 1 > chunk_size and current_chunk:
+                # 输出当前块
+                yield current_chunk
+                await asyncio.sleep(0.05)  # 添加小延迟模拟流式效果
+                current_chunk = line
+            else:
+                # 添加到当前块
+                if current_chunk:
+                    current_chunk += '\n' + line
+                else:
+                    current_chunk = line
+        
+        # 输出最后的块
+        if current_chunk:
+            yield current_chunk
+
+    def _normalize_stream_chunk(self, chunk: Any) -> str:
+        """
+        标准化流式数据块的格式
+        这是一个通用的chunk处理逻辑，可以被子类复用
+        """
+        import json
+        
+        # 添加调试日志
+        self.logger.debug(f"_normalize_stream_chunk received: {type(chunk)} - {chunk}")
+        
+        # 如果chunk是字典类型，保持其结构化格式
+        if isinstance(chunk, dict):
+            result = json.dumps(chunk, ensure_ascii=False)
+            self.logger.debug(f"_normalize_stream_chunk returning dict as JSON: {result}")
+            return result
+        
+        # 确保chunk是字符串格式，不是JSON
+        if isinstance(chunk, str) and not chunk.startswith('{'):
+            self.logger.debug(f"_normalize_stream_chunk returning plain string: {chunk}")
+            return chunk
+        else:
+            # 如果是JSON格式，尝试解析并提取内容
+            try:
+                data = json.loads(chunk) if isinstance(chunk, str) else chunk
+                if isinstance(data, dict) and 'content' in data:
+                    result = data['content']
+                    self.logger.debug(f"_normalize_stream_chunk extracted content: {result}")
+                    return result
+                elif isinstance(data, dict) and 'data' in data:
+                    result = str(data['data'])
+                    self.logger.debug(f"_normalize_stream_chunk extracted data: {result}")
+                    return result
+                elif isinstance(data, dict) and 'ai_stream_chunk' in data:
+                    result = str(data['ai_stream_chunk'])
+                    self.logger.debug(f"_normalize_stream_chunk extracted ai_stream_chunk: {result}")
+                    return result
+                else:
+                    result = json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(chunk)
+                    self.logger.debug(f"_normalize_stream_chunk fallback: {result}")
+                    return result
+            except Exception as e:
+                result = str(chunk)
+                self.logger.debug(f"_normalize_stream_chunk exception {e}, returning: {result}")
+                return result
+
+    async def _handle_stream_error(self, tool_name: str, error: Exception) -> str:
+        """
+        处理流式调用中的错误，返回标准化的错误信息
+        子类可以重写此方法来自定义错误处理
+        """
+        import json
+        import logging
+        
+        logger = logging.getLogger(self.__class__.__name__)
+        logger.error(f"流式工具调用失败 {tool_name}: {error}")
+        
+        return json.dumps({
+            "error": f"流式工具调用失败: {str(error)}"
+        }, ensure_ascii=False)
+
+    def tool_supports_streaming(self, tool_name: str) -> bool:
+        """所有工具都支持流式输出（统一架构）"""
+        return True
+
+    def configure_server(self, config: Dict[str, Any]) -> bool:
+        """配置服务器参数"""
+        try:
+            # 验证配置参数
+            parameters = self.get_server_parameters()
+            param_dict = {p.name: p for p in parameters}
+
+            for key, value in config.items():
+                if key in param_dict:
+                    param = param_dict[key]
+                    # 基本类型验证
+                    if param.param_type == 'integer' and not isinstance(value, int):
+                        try:
+                            value = int(value)
+                        except ValueError:
+                            self.logger.error(f"Invalid integer value for {key}: {value}")
+                            return False
+                    elif param.param_type == 'boolean' and not isinstance(value, bool):
+                        value = str(value).lower() in ('true', '1', 'yes', 'on')
+
+                    self.server_config[key] = value
+
+            # 检查必需参数
+            for param in parameters:
+                if param.required and param.name not in self.server_config:
+                    if param.default_value is not None:
+                        self.server_config[param.name] = param.default_value
+                    else:
+                        self.logger.error(f"Required parameter missing: {param.name}")
+                        return False
+
+            # 保存配置
+            if self.server_config_manager.save_server_config(self.server_config):
+                self.logger.info(f"Server configured and saved: {self.server_config}")
+                return True
+            else:
+                self.logger.error("Failed to save server configuration")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Failed to configure server: {e}")
+            return False
+
+    def get_config_value(self, key: str, default=None):
+        """获取配置值"""
+        return self.server_config.get(key, default)
+
+    def add_tool(self, tool: MCPTool) -> None:
+        """添加工具（去重：同名工具将被替换而不是重复添加）"""
+        for idx, existing in enumerate(self.tools):
+            if existing.name == tool.name:
+                self.tools[idx] = tool
+                self.logger.info(f"Replaced existing tool: {tool.name}")
+                break
+        else:
+            self.tools.append(tool)
+            self.logger.info(f"Added tool: {tool.name}")
+
+    def add_resource(self, resource: MCPResource) -> None:
+        """添加资源（去重：同 URI 的资源将被替换而不是重复添加）"""
+        for idx, existing in enumerate(self.resources):
+            # 以 URI 作为资源的唯一标识；若缺失则退化到名称判定
+            if getattr(existing, 'uri', None) == getattr(resource, 'uri', None) or (
+                getattr(existing, 'uri', None) is None and existing.name == resource.name
+            ):
+                self.resources[idx] = resource
+                self.logger.info(f"Replaced existing resource: {resource.uri or resource.name}")
+                break
+        else:
+            self.resources.append(resource)
+            self.logger.info(f"Added resource: {resource.name}")
+
+    def _log_config_info(self, config: Dict[str, Any], sensitive_keys: List[str] = None) -> None:
+        """记录配置信息日志"""
+        if sensitive_keys is None:
+            sensitive_keys = ['api_key', 'password', 'token', 'secret']
+        
+        # 记录基本配置信息
+        config_items = []
+        for key, value in config.items():
+            if any(sensitive in key.lower() for sensitive in sensitive_keys):
+                config_items.append(f"{key}={'已设置' if value else '未设置'}")
+            elif isinstance(value, str) and len(value) > 100:
+                config_items.append(f"{key}={value[:100]}...")
+            else:
+                config_items.append(f"{key}={value}")
+        
+        if config_items:
+            self.logger.info(f"🔧 配置信息: {', '.join(config_items)}")
+    
+    def _log_tools_info(self) -> None:
+        """记录工具信息日志"""
+        if self.tools:
+            self.logger.info(f"🛠️ 初始化工具列表 (共{len(self.tools)}个，全部支持流式输出):")
+            for tool in self.tools:
+                chunk_info = f" (分块大小: {tool.chunk_size})" if hasattr(tool, 'chunk_size') else ""
+                self.logger.info(f"  - {tool.name}: {tool.description}{chunk_info}")
+    
+    def _validate_required_config(self, required_keys: List[str]) -> None:
+        """验证必需的配置项"""
+        missing_keys = []
+        for key in required_keys:
+            value = self.server_config.get(key)
+            if not value:
+                missing_keys.append(key)
+        
+        if missing_keys:
+            raise ValueError(f"缺少必需的配置项: {', '.join(missing_keys)}")
+    
+    def _get_config_with_defaults(self, config_defaults: Dict[str, Any]) -> Dict[str, Any]:
+        """获取配置值，如果不存在则使用默认值"""
+        result = {}
+        for key, default_value in config_defaults.items():
+            result[key] = self.server_config.get(key, default_value)
+        return result
+    
+    def _setup_decorators_and_log_config(self, required_keys: List[str] = None, 
+                                        config_defaults: Dict[str, Any] = None,
+                                        log_config: bool = True) -> Dict[str, Any]:
+        """通用的装饰器设置和配置处理流程"""
+        # 触发装饰器注册（如果是 EnhancedMCPServer）
+        if hasattr(self, 'setup_tools'):
+            _ = self.setup_tools
+        if hasattr(self, 'setup_server_params'):
+            _ = self.setup_server_params
+        
+        # 验证必需配置
+        if required_keys:
+            self._validate_required_config(required_keys)
+        
+        # 获取配置值
+        config_values = {}
+        if config_defaults:
+            config_values = self._get_config_with_defaults(config_defaults)
+        
+        # 记录配置信息
+        if log_config and config_values:
+            self._log_config_info(config_values)
+        
+        return config_values
+    
+    async def startup(self) -> None:
+        """服务器启动时调用"""
+        if not self._initialized:
+            await self.initialize()
+            self._initialized = True
+            self.logger.info(
+                f"MCP Server '{self.name}' initialized with {len(self.tools)} tools and {len(self.resources)} resources")
+
+    async def shutdown(self) -> None:
+        """服务器关闭时调用"""
+        if self._initialized:
+            # 清理资源
+            self.tools.clear()
+            self.resources.clear()
+            self._initialized = False
+            self.logger.info(f"MCP Server '{self.name}' shutdown completed")
+
+
+@dataclass
+class EnhancedMCPTool(MCPTool):
+    """增强版MCP工具定义，支持直接绑定处理函数"""
+    handler: Optional[Callable] = None
+    stream_handler: Optional[Callable] = None
+
+
+class EnhancedMCPServer(BaseMCPServer):
+    """增强版MCP服务器，支持装饰器和自动工具分发"""
+    
+    def __init__(self, name: str, version: str = "1.0.0", description: str = ""):
+        super().__init__(name, version, description)
+        self._tool_handlers: Dict[str, Callable] = {}
+        self._stream_handlers: Dict[str, Callable] = {}
+        self._resource_handlers: Dict[str, Callable] = {}
+        
+        # 创建装饰器实例
+        from .decorators import AnnotatedDecorators
+        self.decorators = AnnotatedDecorators(self)
+    
+    def register_tool(self, name: str, description: str, input_schema: Dict[str, Any], 
+                     handler: Callable, chunk_size: int = 100,
+                     stream_handler: Optional[Callable] = None) -> None:
+        """注册工具并绑定处理函数"""
+        tool = EnhancedMCPTool(
+            name=name,
+            description=description,
+            input_schema=input_schema,
+            chunk_size=chunk_size,
+            handler=handler,
+            stream_handler=stream_handler
+        )
+        
+        self.add_tool(tool)
+        self._tool_handlers[name] = handler
+        if stream_handler:
+            self._stream_handlers[name] = stream_handler
+    
+    def register_resource(self, uri: str, name: str, description: str, 
+                         handler: Callable, mime_type: str = 'text/plain') -> None:
+        """注册资源并绑定处理函数"""
+        resource = MCPResource(
+            uri=uri,
+            name=name,
+            description=description,
+            mime_type=mime_type
+        )
+        
+        self.add_resource(resource)
+        self._resource_handlers[uri] = handler
+    
+    async def handle_tool_call(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+        """自动分发工具调用到注册的处理函数"""
+        if tool_name not in self._tool_handlers:
+            raise ValueError(f"Tool '{tool_name}' not found")
+        
+        handler = self._tool_handlers[tool_name]
+        
+        try:
+            # 获取工具的input_schema进行参数验证
+            tool = next((t for t in self.tools if t.name == tool_name), None)
+            if tool and tool.input_schema:
+                self._validate_arguments(tool_name, arguments, tool.input_schema)
+            
+            # 检查处理函数的签名
+            sig = inspect.signature(handler)
+            params = list(sig.parameters.keys())
+            
+            # 如果是实例方法，跳过self参数
+            if params and params[0] == 'self':
+                if inspect.iscoroutinefunction(handler):
+                    return await handler(**arguments)
+                else:
+                    return handler(**arguments)
+            else:
+                # 静态函数或普通函数
+                if inspect.iscoroutinefunction(handler):
+                    return await handler(**arguments)
+                else:
+                    return handler(**arguments)
+        except Exception as e:
+            self.logger.error(f"Tool call failed for '{tool_name}': {e}")
+            raise
+    
+    async def handle_tool_call_stream(self, tool_name: str, arguments: Dict[str, Any], session_id: str = None) -> AsyncGenerator[str, None]:
+        """自动分发流式工具调用"""
+        if tool_name in self._stream_handlers:
+            handler = self._stream_handlers[tool_name]
+            try:
+                # 获取工具的input_schema进行参数验证
+                tool = next((t for t in self.tools if t.name == tool_name), None)
+                if tool and tool.input_schema:
+                    self._validate_arguments(tool_name, arguments, tool.input_schema)
+                
+                sig = inspect.signature(handler)
+                params = list(sig.parameters.keys())
+                
+                if params and params[0] == 'self':
+                    # 调用handler获取async generator
+                    async_gen = handler(**arguments)
+                    self.logger.debug(f"Stream handler returned: {type(async_gen)}")
+                    async for chunk in async_gen:
+                        self.logger.debug(f"Stream handler yielded chunk: {type(chunk)} - {chunk}")
+                        yield self._normalize_stream_chunk(chunk)
+                else:
+                    # 调用handler获取async generator
+                    async_gen = handler(**arguments)
+                    self.logger.debug(f"Stream handler returned: {type(async_gen)}")
+                    async for chunk in async_gen:
+                        self.logger.debug(f"Stream handler yielded chunk: {type(chunk)} - {chunk}")
+                        yield self._normalize_stream_chunk(chunk)
+            except Exception as e:
+                self.logger.error(f"Stream tool call failed for '{tool_name}': {e}")
+                yield await self._handle_stream_error(tool_name, e)
+        else:
+            # 回退到普通调用
+            async for chunk in super().handle_tool_call_stream(tool_name, arguments, session_id):
+                yield chunk
+    
+    async def handle_resource_request(self, uri: str) -> Dict[str, Any]:
+        """自动分发资源请求"""
+        if uri not in self._resource_handlers:
+            raise NotImplementedError(f"Resource not found: {uri}")
+        
+        handler = self._resource_handlers[uri]
+        
+        try:
+            sig = inspect.signature(handler)
+            params = list(sig.parameters.keys())
+            
+            if params and params[0] == 'self':
+                if inspect.iscoroutinefunction(handler):
+                    return await handler(uri)
+                else:
+                    return handler(uri)
+            else:
+                if inspect.iscoroutinefunction(handler):
+                    return await handler(uri)
+                else:
+                    return handler(uri)
+        except Exception as e:
+            self.logger.error(f"Resource request failed for '{uri}': {e}")
+            raise
+    
+    def get_server_parameters(self) -> List[ServerParameter]:
+        """获取服务器参数定义，支持装饰器配置"""
+        # 合并装饰器配置的参数和子类定义的参数
+        # 检查 decorators 是否已初始化
+        decorator_params = []
+        if hasattr(self, 'decorators') and self.decorators is not None:
+            decorator_params = self.decorators.get_server_parameters() or []
+        
+        # 如果子类重写了此方法，也获取其参数
+        subclass_params = []
+        if hasattr(super(), 'get_server_parameters'):
+            try:
+                subclass_params = super().get_server_parameters() or []
+            except (NotImplementedError, AttributeError):
+                pass
+        
+        # 合并参数，装饰器参数优先
+        all_params = decorator_params + subclass_params
+        
+        # 去重（基于参数名）
+        seen_names = set()
+        unique_params = []
+        for param in all_params:
+            if param.name not in seen_names:
+                unique_params.append(param)
+                seen_names.add(param.name)
+        
+        return unique_params
+    
+    # 提供装饰器访问
+    @property
+    def tool(self):
+        """工具装饰器"""
+        return self.decorators.tool
+    
+    @property
+    def streaming_tool(self):
+        """流式工具装饰器"""
+        return self.decorators.streaming_tool
+    
+    @property
+    def resource(self):
+        """资源装饰器"""
+        return self.decorators.resource
+    
+    @property
+    def server_param(self):
+        """服务器参数装饰器"""
+        return self.decorators.server_param

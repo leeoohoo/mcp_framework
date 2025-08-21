@@ -1,0 +1,379 @@
+# MCP Framework
+
+一个强大且易用的 MCP (Model Context Protocol) 服务器开发框架，支持快速构建、部署和管理 MCP 服务器。
+
+## 🚀 特性
+
+### 核心功能
+- **简单易用**: 基于装饰器的 API 设计，快速定义工具和资源
+- **类型安全**: 完整的类型注解支持，自动生成 JSON Schema
+- **流式支持**: 内置流式响应支持，适合大数据量处理
+- **配置管理**: 灵活的配置系统，支持多端口配置
+- **自动构建**: 集成 PyInstaller 构建系统，一键生成可执行文件
+
+### 高级特性
+- **多平台支持**: Windows、macOS、Linux 跨平台构建
+- **依赖管理**: 智能依赖分析和打包
+- **热重载**: 开发模式下支持代码热重载
+- **日志系统**: 完整的日志记录和调试支持
+- **Web 界面**: 内置配置和测试 Web 界面
+
+## 📦 安装
+
+### 从 PyPI 安装
+
+```bash
+pip install mcp-framework
+```
+
+### 从源码安装
+
+```bash
+git clone https://github.com/your-repo/mcp_framework.git
+cd mcp_framework
+pip install -e .
+```
+
+## 🎯 快速开始
+
+### 1. 创建基础服务器
+
+```python
+#!/usr/bin/env python3
+from mcp_framework import EnhancedMCPServer, run_server_main
+from mcp_framework.core.decorators import Required, Optional
+from typing import Annotated
+
+# 创建服务器实例
+server = EnhancedMCPServer(
+    name="MyMCPServer",
+    version="1.0.0",
+    description="我的第一个 MCP 服务器"
+)
+
+# 使用装饰器定义工具
+@server.tool("计算两个数的和")
+async def add_numbers(
+    a: Annotated[int, Required("第一个数字")],
+    b: Annotated[int, Required("第二个数字")]
+) -> int:
+    """计算两个数字的和"""
+    return a + b
+
+# 定义流式工具
+@server.streaming_tool("生成数字序列")
+async def generate_sequence(
+    start: Annotated[int, Required("起始数字")],
+    end: Annotated[int, Required("结束数字")]
+):
+    """生成数字序列"""
+    for i in range(start, end + 1):
+        yield f"数字: {i}"
+        await asyncio.sleep(0.1)  # 模拟处理时间
+
+# 定义资源
+@server.resource(
+    uri="file://data.txt",
+    name="示例数据",
+    description="示例数据文件"
+)
+async def get_data():
+    return {"content": "这是示例数据", "type": "text/plain"}
+
+# 启动服务器
+if __name__ == "__main__":
+    run_server_main(
+        server_instance=server,
+        server_name="MyMCPServer",
+        default_port=8080
+    )
+```
+
+### 2. 运行服务器
+
+```bash
+python my_server.py --port 8080 --host localhost
+```
+
+## 📚 详细文档
+
+### 装饰器 API
+
+#### 工具装饰器
+
+```python
+# 基础工具
+@server.tool("工具描述")
+async def my_tool(param1: str, param2: int) -> str:
+    return f"处理结果: {param1} - {param2}"
+
+# 流式工具
+@server.streaming_tool("流式工具描述")
+async def my_streaming_tool(query: str):
+    for i in range(10):
+        yield f"处理步骤 {i}: {query}"
+        await asyncio.sleep(0.1)
+```
+
+#### 参数类型注解
+
+```python
+from mcp_framework.core.decorators import Required, Optional, Enum, IntRange
+from typing import Annotated
+
+@server.tool("高级参数示例")
+async def advanced_params(
+    # 必填字符串参数
+    name: Annotated[str, Required("用户名称")],
+    
+    # 可选参数带默认值
+    age: Annotated[int, Optional("年龄", default=18)],
+    
+    # 枚举参数
+    gender: Annotated[str, Enum("性别", ["male", "female", "other"])],
+    
+    # 范围参数
+    score: Annotated[int, IntRange("分数", min_val=0, max_val=100)],
+    
+    # 布尔参数
+    active: Annotated[bool, Required("是否激活")] = True
+) -> dict:
+    return {
+        "name": name,
+        "age": age,
+        "gender": gender,
+        "score": score,
+        "active": active
+    }
+```
+
+#### 资源装饰器
+
+```python
+@server.resource(
+    uri="file://config.json",
+    name="配置文件",
+    description="服务器配置文件",
+    mime_type="application/json"
+)
+async def get_config():
+    return {
+        "content": json.dumps({"setting1": "value1"}),
+        "type": "application/json"
+    }
+```
+
+### 服务器配置
+
+#### 配置参数定义
+
+```python
+from mcp_framework.core.decorators import ServerParam, StringParam, SelectParam
+
+@server.server_param("api_key")
+def api_key_param() -> Annotated[str, StringParam(
+    "API 密钥",
+    "用于访问外部服务的 API 密钥",
+    placeholder="请输入 API 密钥"
+)]:
+    pass
+
+@server.server_param("model_type")
+def model_param() -> Annotated[str, SelectParam(
+    "模型类型",
+    "选择要使用的 AI 模型",
+    options=["gpt-3.5-turbo", "gpt-4", "claude-3"]
+)]:
+    pass
+```
+
+#### 配置使用
+
+```python
+@server.tool("使用配置的工具")
+async def configured_tool(query: Annotated[str, Required("查询内容")]):
+    # 获取配置值
+    api_key = server.get_config_value("api_key")
+    model_type = server.get_config_value("model_type", "gpt-3.5-turbo")
+    
+    # 使用配置进行处理
+    return f"使用 {model_type} 处理查询: {query}"
+```
+
+### 多端口配置
+
+框架支持为不同端口创建独立的配置文件：
+
+```bash
+# 在不同端口启动服务器，会自动创建对应的配置文件
+python server.py --port 8080  # 创建 server_port_8080_config.json
+python server.py --port 8081  # 创建 server_port_8081_config.json
+```
+
+## 🔨 构建系统
+
+框架集成了强大的构建系统，支持将 MCP 服务器打包为独立的可执行文件。
+
+### 构建功能特性
+
+- **自动发现**: 自动发现项目中的所有服务器脚本
+- **依赖分析**: 智能分析和收集依赖包
+- **多平台构建**: 支持 Windows、macOS、Linux
+- **虚拟环境隔离**: 为每个服务器创建独立的构建环境
+- **完整打包**: 生成包含所有依赖的分发包
+
+### 使用构建系统
+
+#### 1. 准备构建脚本
+
+在项目根目录创建 `build.py`（或使用框架提供的构建脚本）：
+
+```python
+#!/usr/bin/env python3
+from mcp_framework.build import MCPServerBuilder
+
+if __name__ == "__main__":
+    builder = MCPServerBuilder()
+    builder.build_all()
+```
+
+#### 2. 构建命令
+
+```bash
+# 构建所有服务器
+python build.py
+
+# 构建特定服务器
+python build.py --server my_server.py
+
+# 列出所有可构建的服务器
+python build.py --list
+
+# 只清理构建目录
+python build.py --clean-only
+
+# 跳过测试
+python build.py --no-test
+
+# 包含源代码
+python build.py --include-source
+```
+
+#### 3. 构建输出
+
+构建完成后，会在 `dist/` 目录生成分发包：
+
+```
+dist/
+├── my-server-macos-arm64-20241201_143022.tar.gz
+├── weather-server-macos-arm64-20241201_143025.tar.gz
+└── ...
+```
+
+每个分发包包含：
+- 可执行文件
+- 完整的 requirements.txt
+- 启动脚本（start.sh / start.bat）
+- README 和许可证文件
+- 源代码（如果指定 --include-source）
+
+### 依赖管理
+
+构建系统支持多层依赖管理：
+
+1. **通用依赖** (`requirements.txt`): 所有服务器共享的依赖
+2. **特定依赖** (`{server_name}_requirements.txt`): 特定服务器的依赖
+3. **自动分析**: 从代码中自动分析导入的包
+
+示例文件结构：
+```
+project/
+├── requirements.txt              # 通用依赖
+├── weather_server.py
+├── weather_server_requirements.txt  # weather_server 特定依赖
+├── chat_server.py
+├── chat_server_requirements.txt     # chat_server 特定依赖
+└── build.py
+```
+
+## 🌐 Web 界面
+
+框架提供内置的 Web 管理界面：
+
+```python
+from mcp_framework.web import setup_web_interface
+
+# 启用 Web 界面
+setup_web_interface(server, port=8080)
+```
+
+访问 `http://localhost:8080/config` 进行配置管理。
+
+## 🔧 高级用法
+
+### 自定义服务器类
+
+```python
+from mcp_framework import BaseMCPServer
+
+class CustomMCPServer(BaseMCPServer):
+    def __init__(self):
+        super().__init__("CustomServer", "1.0.0")
+        
+    async def initialize(self):
+        # 自定义初始化逻辑
+        self.custom_data = await self.load_custom_data()
+        
+    async def handle_tool_call(self, tool_name: str, arguments: dict):
+        # 自定义工具调用处理
+        if tool_name == "custom_tool":
+            return await self.handle_custom_tool(arguments)
+        return await super().handle_tool_call(tool_name, arguments)
+```
+
+### 中间件支持
+
+```python
+from mcp_framework.server.middleware import LoggingMiddleware, AuthMiddleware
+
+# 添加中间件
+server.add_middleware(LoggingMiddleware())
+server.add_middleware(AuthMiddleware(api_key="your-api-key"))
+```
+
+## 📖 示例项目
+
+查看 `examples/` 目录中的完整示例：
+
+- `examples/port_config_demo.py` - 端口配置演示
+- `examples/weather_server.py` - 天气服务器示例
+- `examples/file_manager.py` - 文件管理服务器
+- `examples/ai_assistant.py` - AI 助手服务器
+
+## 🤝 贡献
+
+欢迎贡献代码！请查看 [CONTRIBUTING.md](CONTRIBUTING.md) 了解详细信息。
+
+## 📄 许可证
+
+本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详细信息。
+
+## 🆘 支持
+
+- 📚 [文档](https://mcp-framework.readthedocs.io/)
+- 🐛 [问题反馈](https://github.com/your-repo/mcp_framework/issues)
+- 💬 [讨论区](https://github.com/your-repo/mcp_framework/discussions)
+- 📧 [邮件支持](mailto:support@mcpframework.com)
+
+## 🗺️ 路线图
+
+- [ ] 插件系统
+- [ ] 图形化配置界面
+- [ ] 集群部署支持
+- [ ] 性能监控面板
+- [ ] Docker 容器化支持
+- [ ] 云原生部署模板
+
+---
+
+**MCP Framework** - 让 MCP 服务器开发变得简单而强大！ 🚀

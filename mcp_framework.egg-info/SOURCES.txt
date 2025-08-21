@@ -1,0 +1,15 @@
+MANIFEST.in
+README.md
+pyproject.toml
+setup.py
+examples/port_config_demo.py
+mcp_framework/__init__.py
+mcp_framework/build.py
+mcp_framework/cli.py
+mcp_framework.egg-info/PKG-INFO
+mcp_framework.egg-info/SOURCES.txt
+mcp_framework.egg-info/dependency_links.txt
+mcp_framework.egg-info/entry_points.txt
+mcp_framework.egg-info/not-zip-safe
+mcp_framework.egg-info/requires.txt
+mcp_framework.egg-info/top_level.txt

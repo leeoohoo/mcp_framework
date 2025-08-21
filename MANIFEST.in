@@ -1,0 +1,45 @@
+# 包含文档文件
+include README.md
+include LICENSE
+include CHANGELOG.md
+include CONTRIBUTING.md
+
+# 包含配置文件
+include *.txt
+include *.cfg
+include *.ini
+include *.yaml
+include *.yml
+include *.json
+
+# 包含 Web 资源
+recursive-include mcp_framework/web/templates *.html
+recursive-include mcp_framework/web/static *.css *.js *.png *.jpg *.gif *.ico
+
+# 包含文档
+recursive-include mcp_framework/docs *.md *.rst *.txt
+
+# 包含示例文件
+recursive-include examples *.py *.md *.txt *.json
+
+# 包含测试文件
+recursive-include tests *.py
+
+# 排除不需要的文件
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude *.pyd
+global-exclude __pycache__
+global-exclude .git*
+global-exclude .DS_Store
+global-exclude *.so
+global-exclude .pytest_cache
+global-exclude .coverage
+global-exclude .tox
+
+# 包含构建相关文件
+include pyproject.toml
+include setup.cfg
+include tox.ini
+include .flake8
+include mypy.ini

@@ -1,0 +1,459 @@
+#!/usr/bin/env python3
+"""
+MCP Framework 构建系统
+集成 PyInstaller 构建功能
+"""
+
+import os
+import sys
+import shutil
+import subprocess
+import platform
+import argparse
+from pathlib import Path
+import zipfile
+import tarfile
+import venv
+import tempfile
+from datetime import datetime
+import ast
+import importlib.util
+from typing import List, Dict, Any, Set
+
+
+class MCPServerBuilder:
+    """MCP 服务器构建器"""
+
+    def __init__(self, server_script=None):
+        self.project_root = Path.cwd()
+        self.dist_dir = self.project_root / "dist"
+        self.build_dir = self.project_root / "build"
+        self.platform_name = self.get_platform_name()
+        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.server_script = server_script
+
+    def discover_servers(self) -> List[Path]:
+        """自动发现所有服务器脚本"""
+        server_files = []
+        print("🔍 Discovering server scripts...")
+
+        # 查找所有 *_server.py 文件
+        for file_path in self.project_root.glob("*_server.py"):
+            if file_path.name not in ["test_server.py", "mcp_server.py"]:
+                server_files.append(file_path)
+                print(f"   ✅ Found: {file_path.name}")
+            else:
+                print(f"   ❌ Excluded: {file_path.name}")
+
+        print(f"   Total discovered: {len(server_files)} servers")
+        return server_files
+
+    def get_server_config(self, script_path: Path) -> Dict[str, Any]:
+        """根据脚本路径生成服务器配置"""
+        script_name = script_path.stem
+        exe_name = script_name.replace("_", "-")
+        spec_file = self.project_root / f"{script_name}.spec"
+
+        return {
+            "script": script_path.name,
+            "name": exe_name,
+            "spec": spec_file.name if spec_file.exists() else None
+        }
+
+    def get_platform_name(self) -> str:
+        """获取平台名称"""
+        system = platform.system().lower()
+        machine = platform.machine().lower()
+
+        if system == "windows":
+            return f"windows-{machine}"
+        elif system == "darwin":
+            return f"macos-{machine}"
+        elif system == "linux":
+            return f"linux-{machine}"
+        else:
+            return f"{system}-{machine}"
+
+    def clean(self):
+        """清理构建目录"""
+        print("🧹 Cleaning build directories...")
+
+        dirs_to_clean = [self.dist_dir, self.build_dir, "__pycache__"]
+
+        for dir_path in dirs_to_clean:
+            if isinstance(dir_path, str):
+                dir_path = self.project_root / dir_path
+
+            if dir_path.exists():
+                shutil.rmtree(dir_path)
+                print(f"   Removed: {dir_path}")
+
+        # 清理 .pyc 文件
+        for pyc_file in self.project_root.rglob("*.pyc"):
+            pyc_file.unlink()
+
+        print("✅ Clean completed")
+
+    def analyze_script_imports(self, script_path: Path) -> Set[str]:
+        """分析脚本中的导入语句"""
+        imports = set()
+
+        try:
+            with open(script_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            tree = ast.parse(content)
+
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        imports.add(alias.name.split('.')[0])
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module:
+                        imports.add(node.module.split('.')[0])
+
+            print(f"   📄 Analyzed imports from {script_path.name}: {sorted(imports)}")
+            return imports
+
+        except Exception as e:
+            print(f"   ⚠️  Failed to analyze imports from {script_path}: {e}")
+            return set()
+
+    def get_requirements_for_script(self, script_path: Path) -> Set[str]:
+        """获取脚本的所有依赖"""
+        script_name = script_path.stem
+        all_requirements = set()
+
+        # 通用依赖
+        general_requirements = self.project_root / "requirements.txt"
+        if general_requirements.exists():
+            with open(general_requirements, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        all_requirements.add(line)
+
+        # 特定服务依赖
+        specific_requirements = self.project_root / f"{script_name}_requirements.txt"
+        if specific_requirements.exists():
+            with open(specific_requirements, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        all_requirements.add(line)
+
+        return all_requirements
+
+    def build_executable(self, script_path: Path, onefile: bool = True) -> bool:
+        """构建可执行文件"""
+        config = self.get_server_config(script_path)
+        script_name = script_path.stem
+
+        print(f"🔨 Building {config['name']} executable for {self.platform_name}...")
+
+        # 创建虚拟环境
+        venv_dir = self.build_dir / f"venv_{script_name}"
+        if venv_dir.exists():
+            shutil.rmtree(venv_dir)
+
+        print(f"   Creating virtual environment...")
+        venv.create(venv_dir, with_pip=True)
+
+        # 确定虚拟环境路径
+        if platform.system() == "Windows":
+            venv_python = venv_dir / "Scripts" / "python.exe"
+            venv_pip = venv_dir / "Scripts" / "pip.exe"
+            venv_pyinstaller = venv_dir / "Scripts" / "pyinstaller.exe"
+        else:
+            venv_python = venv_dir / "bin" / "python"
+            venv_pip = venv_dir / "bin" / "pip"
+            venv_pyinstaller = venv_dir / "bin" / "pyinstaller"
+
+        try:
+            # 安装依赖
+            if not self.install_dependencies_in_venv(script_path, venv_pip):
+                return False
+
+            # 安装 PyInstaller
+            print(f"   🔧 Installing PyInstaller...")
+            result = subprocess.run([str(venv_pip), "install", "pyinstaller>=5.0.0"],
+                                    capture_output=True, text=True)
+            if result.returncode != 0:
+                print(f"   ❌ Failed to install PyInstaller: {result.stderr}")
+                return False
+
+            # 构建命令
+            cmd = [str(venv_pyinstaller)]
+            cmd.extend([
+                "--clean",
+                "--name", config['name'],
+                "--console",
+                "--distpath", str(self.dist_dir),
+                "--workpath", str(self.build_dir / f"work_{script_name}"),
+                "--specpath", str(self.build_dir / f"spec_{script_name}"),
+                "--noconfirm"
+            ])
+
+            if onefile:
+                cmd.append("--onefile")
+
+            # 添加隐藏导入
+            requirements = self.get_requirements_for_script(script_path)
+            for req in requirements:
+                pkg_name = req.split('==')[0].split('>=')[0].split('<=')[0].strip()
+                cmd.extend(["--collect-all", pkg_name])
+            
+            # 添加 MCP Framework 的隐藏导入
+            mcp_framework_imports = [
+                "mcp_framework", "mcp_framework.core", "mcp_framework.core.base",
+                "mcp_framework.core.decorators", "mcp_framework.core.config",
+                "mcp_framework.core.launcher", "mcp_framework.core.utils",
+                "mcp_framework.server", "mcp_framework.server.http_server",
+                "mcp_framework.web"
+            ]
+            for imp in mcp_framework_imports:
+                cmd.extend(["--hidden-import", imp])
+
+            cmd.append(str(script_path))
+
+            print(f"   🔧 Running PyInstaller...")
+            result = subprocess.run(cmd, cwd=self.project_root, capture_output=True, text=True)
+
+            if result.returncode != 0:
+                print(f"   ❌ PyInstaller failed: {result.stderr}")
+                return False
+            else:
+                print("   ✅ Executable built successfully")
+                return True
+
+        except Exception as e:
+            print(f"❌ Exception during build: {e}")
+            return False
+        finally:
+            # 清理虚拟环境
+            if venv_dir.exists():
+                shutil.rmtree(venv_dir)
+
+    def install_dependencies_in_venv(self, script_path: Path, venv_pip: Path) -> bool:
+        """在虚拟环境中安装依赖"""
+        requirements = self.get_requirements_for_script(script_path)
+
+        if requirements:
+            temp_req = self.build_dir / f"temp_req_{script_path.stem}.txt"
+            temp_req.parent.mkdir(parents=True, exist_ok=True)
+
+            with open(temp_req, 'w', encoding='utf-8') as f:
+                for req in sorted(requirements):
+                    f.write(f"{req}\n")
+
+            try:
+                # 升级 pip
+                subprocess.run([str(venv_pip), "install", "--upgrade", "pip"],
+                               check=True, capture_output=True)
+
+                # 安装依赖
+                subprocess.run([str(venv_pip), "install", "-r", str(temp_req)],
+                               check=True, capture_output=True, text=True)
+                print(f"   ✅ Dependencies installed successfully")
+                return True
+
+            except subprocess.CalledProcessError as e:
+                print(f"   ❌ Failed to install dependencies: {e}")
+                return False
+            finally:
+                if temp_req.exists():
+                    temp_req.unlink()
+        else:
+            print(f"   ⚠️  No requirements to install")
+
+        return True
+
+    def create_package(self, script_path: Path, include_source: bool = False) -> bool:
+        """创建分发包"""
+        config = self.get_server_config(script_path)
+        
+        # 确定可执行文件路径
+        if platform.system() == "Windows":
+            exe_name = f"{config['name']}.exe"
+        else:
+            exe_name = config['name']
+
+        exe_path = self.dist_dir / exe_name
+        if not exe_path.exists():
+            print(f"❌ Executable not found: {exe_path}")
+            return False
+
+        # 创建包目录
+        package_name = f"{config['name']}-{self.platform_name}-{self.timestamp}"
+        package_dir = self.dist_dir / package_name
+        package_dir.mkdir(exist_ok=True)
+
+        # 复制可执行文件
+        shutil.copy2(exe_path, package_dir / exe_name)
+
+        # 创建 requirements.txt
+        self.create_complete_requirements(script_path, package_dir)
+
+        # 复制其他文件
+        for file_name in ["README.md", "LICENSE"]:
+            file_path = self.project_root / file_name
+            if file_path.exists():
+                shutil.copy2(file_path, package_dir / file_name)
+
+        # 创建启动脚本
+        self.create_startup_scripts(package_dir, exe_name)
+
+        # 包含源代码（可选）
+        if include_source:
+            source_dir = package_dir / "source"
+            source_dir.mkdir(exist_ok=True)
+            shutil.copy2(script_path, source_dir / script_path.name)
+
+        # 创建压缩包
+        archive_path = self.create_archive(package_dir)
+        print(f"✅ Package created: {archive_path}")
+        return True
+
+    def create_complete_requirements(self, script_path: Path, package_dir: Path):
+        """创建完整的 requirements.txt"""
+        requirements = self.get_requirements_for_script(script_path)
+        req_file = package_dir / "requirements.txt"
+        
+        with open(req_file, 'w', encoding='utf-8') as f:
+            f.write(f"# {self.get_server_config(script_path)['name']} Dependencies\n")
+            f.write(f"# Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            for req in sorted(requirements):
+                f.write(f"{req}\n")
+
+    def create_startup_scripts(self, package_dir: Path, exe_name: str):
+        """创建启动脚本"""
+        # Windows 批处理文件
+        if platform.system() == "Windows":
+            bat_content = f"""@echo off
+echo Starting MCP Server...
+"{exe_name}" %*
+pause
+"""
+            with open(package_dir / "start.bat", "w") as f:
+                f.write(bat_content)
+
+        # Unix shell 脚本
+        sh_content = f"""#!/bin/bash
+echo Starting MCP Server...
+cd "$(dirname "$0")"
+./{exe_name} "$@"
+"""
+        sh_file = package_dir / "start.sh"
+        with open(sh_file, "w") as f:
+            f.write(sh_content)
+
+        # 设置执行权限
+        if platform.system() != "Windows":
+            os.chmod(sh_file, 0o755)
+            os.chmod(package_dir / exe_name, 0o755)
+
+    def create_archive(self, package_dir: Path) -> Path:
+        """创建压缩包"""
+        archive_name = package_dir.name
+
+        if platform.system() == "Windows":
+            archive_path = package_dir.parent / f"{archive_name}.zip"
+            with zipfile.ZipFile(archive_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for file_path in package_dir.rglob("*"):
+                    if file_path.is_file():
+                        arcname = file_path.relative_to(package_dir.parent)
+                        zf.write(file_path, arcname)
+        else:
+            archive_path = package_dir.parent / f"{archive_name}.tar.gz"
+            with tarfile.open(archive_path, 'w:gz') as tf:
+                tf.add(package_dir, arcname=archive_name)
+
+        return archive_path
+
+    def build_all(self, clean: bool = True, test: bool = True, 
+                  onefile: bool = True, include_source: bool = False) -> bool:
+        """构建所有服务器"""
+        if clean:
+            self.clean()
+
+        # 创建目录
+        self.dist_dir.mkdir(exist_ok=True)
+        self.build_dir.mkdir(exist_ok=True)
+
+        # 发现服务器
+        if self.server_script:
+            servers = [Path(self.server_script)]
+        else:
+            servers = self.discover_servers()
+
+        if not servers:
+            print("❌ No server scripts found")
+            return False
+
+        built_servers = []
+        for script_path in servers:
+            config = self.get_server_config(script_path)
+            print(f"\n🔨 Building {config['name']}...")
+
+            # 构建可执行文件
+            if not self.build_executable(script_path, onefile=onefile):
+                print(f"❌ Failed to build {config['name']}")
+                continue
+
+            # 创建分发包
+            if not self.create_package(script_path, include_source=include_source):
+                print(f"❌ Failed to create package for {config['name']}")
+                continue
+
+            built_servers.append(config['name'])
+
+        if not built_servers:
+            print("\n❌ No servers were built successfully")
+            return False
+
+        print("\n🎉 Build completed successfully!")
+        print(f"✅ Successfully built {len(built_servers)} server(s):")
+        for server_name in built_servers:
+            print(f"   - {server_name}")
+
+        return True
+
+
+def main():
+    """主函数"""
+    parser = argparse.ArgumentParser(description="MCP Server Build Script")
+    parser.add_argument("--server", "-s", help="Specific server script to build")
+    parser.add_argument("--no-clean", action="store_true", help="Skip cleaning")
+    parser.add_argument("--no-test", action="store_true", help="Skip tests")
+    parser.add_argument("--no-onefile", action="store_true", help="Build as directory")
+    parser.add_argument("--include-source", action="store_true", help="Include source")
+    parser.add_argument("--clean-only", action="store_true", help="Only clean")
+    parser.add_argument("--list", "-l", action="store_true", help="List servers")
+
+    args = parser.parse_args()
+    builder = MCPServerBuilder(server_script=args.server)
+
+    if args.list:
+        servers = builder.discover_servers()
+        print("📋 Available server scripts:")
+        for server in servers:
+            config = builder.get_server_config(server)
+            print(f"   - {server.name} → {config['name']}")
+        return
+
+    if args.clean_only:
+        builder.clean()
+        return
+
+    success = builder.build_all(
+        clean=not args.no_clean,
+        test=not args.no_test,
+        onefile=not args.no_onefile,
+        include_source=args.include_source
+    )
+
+    sys.exit(0 if success else 1)
+
+
+if __name__ == "__main__":
+    main()

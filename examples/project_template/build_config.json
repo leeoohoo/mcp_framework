@@ -1,0 +1,116 @@
+{
+  "project": {
+    "name": "My MCP Project",
+    "version": "1.0.0",
+    "description": "我的 MCP 服务器项目",
+    "author": "Your Name",
+    "email": "your.email@example.com"
+  },
+  "servers": [
+    {
+      "script": "my_server.py",
+      "name": "My Main Server",
+      "description": "主要的 MCP 服务器",
+      "executable_name": "my-mcp-server",
+      "icon": "assets/icon.ico",
+      "requirements": "requirements.txt"
+    },
+    {
+      "script": "utils_server.py",
+      "name": "Utilities Server",
+      "description": "实用工具服务器",
+      "executable_name": "utils-server",
+      "requirements": "utils_requirements.txt"
+    }
+  ],
+  "build_options": {
+    "platforms": ["native", "windows", "linux"],
+    "include_source": false,
+    "create_installer": true,
+    "optimize": true,
+    "strip_debug": true,
+    "upx_compress": false,
+    "console": true,
+    "windowed": false
+  },
+  "packaging": {
+    "output_dir": "dist",
+    "temp_dir": "build",
+    "clean_before_build": true,
+    "create_zip": true,
+    "zip_name_template": "{name}-{version}-{platform}"
+  },
+  "dependencies": {
+    "python_version": "3.11",
+    "pip_requirements": [
+      "mcp-framework>=0.1.0",
+      "aiohttp>=3.8.0",
+      "aiofiles>=0.8.0"
+    ],
+    "system_packages": {
+      "linux": ["gcc", "g++"],
+      "windows": [],
+      "macos": []
+    }
+  },
+  "pyinstaller": {
+    "hidden_imports": [
+      "mcp_framework",
+      "mcp_framework.core",
+      "mcp_framework.server",
+      "mcp_framework.tools",
+      "mcp_framework.resources"
+    ],
+    "exclude_modules": [
+      "tkinter",
+      "matplotlib",
+      "scipy"
+    ],
+    "add_data": [
+      {
+        "source": "data/*",
+        "destination": "data"
+      },
+      {
+        "source": "config.json",
+        "destination": "."
+      }
+    ],
+    "additional_hooks_dir": "hooks",
+    "runtime_hooks": ["hooks/runtime_hook.py"]
+  },
+  "docker": {
+    "enabled": true,
+    "base_images": {
+      "linux": "python:3.11-slim",
+      "windows": "python:3.11-windowsservercore"
+    },
+    "install_system_deps": {
+      "linux": ["gcc", "g++", "make"],
+      "windows": []
+    },
+    "docker_build_args": {
+      "PYTHON_VERSION": "3.11",
+      "BUILD_DATE": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+    }
+  },
+  "testing": {
+    "run_tests_before_build": true,
+    "test_command": "python -m pytest tests/",
+    "test_requirements": "test_requirements.txt",
+    "coverage_threshold": 80
+  },
+  "distribution": {
+    "create_checksums": true,
+    "checksum_algorithms": ["sha256", "md5"],
+    "sign_executables": false,
+    "signing_certificate": "certs/code_signing.p12",
+    "upload_to_github": true,
+    "github_release_draft": true
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "build.log",
+    "format": "%(asctime)s - %(levelname)s - %(message)s"
+  }
+}

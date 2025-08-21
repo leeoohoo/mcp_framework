@@ -1,0 +1,3 @@
+[console_scripts]
+mcp-build = mcp_framework.build:main
+mcp-framework = mcp_framework.cli:main

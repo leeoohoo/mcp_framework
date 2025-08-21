@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  # Linux 构建服务
+  build-linux:
+    build:
+      context: .
+      dockerfile: Dockerfile.linux
+    volumes:
+      - ./dist:/app/dist
+    command: ["--no-test"]
+    profiles:
+      - build
+
+  # Windows 构建服务
+  build-windows:
+    build:
+      context: .
+      dockerfile: Dockerfile.windows
+    volumes:
+      - ./dist:/app/dist
+    command: ["--no-test"]
+    profiles:
+      - build
+
+  # 开发环境服务
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.linux
+    volumes:
+      - .:/app
+      - ./dist:/app/dist
+    command: ["--help"]
+    profiles:
+      - dev
