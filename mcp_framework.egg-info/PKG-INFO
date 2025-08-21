@@ -1,6 +1,6 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.4
 Name: mcp-framework
-Version: 0.1.0
+Version: 0.1.1
 Summary: 一个强大且易用的 MCP (Model Context Protocol) 服务器开发框架
 Home-page: https://github.com/mcpframework/mcp_framework
 Author: MCP Framework Team
@@ -29,10 +29,34 @@ Classifier: Framework :: AsyncIO
 Classifier: Operating System :: OS Independent
 Requires-Python: >=3.8
 Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: aiohttp>=3.8.0
+Requires-Dist: aiofiles>=23.0.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: click>=8.0.0
+Requires-Dist: colorama>=0.4.6
+Requires-Dist: psutil>=5.9.0
+Requires-Dist: PyInstaller>=5.0.0
 Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+Requires-Dist: black>=22.0.0; extra == "dev"
+Requires-Dist: flake8>=4.0.0; extra == "dev"
+Requires-Dist: mypy>=0.991; extra == "dev"
+Requires-Dist: pre-commit>=2.20.0; extra == "dev"
 Provides-Extra: web
+Requires-Dist: jinja2>=3.0.0; extra == "web"
+Requires-Dist: aiohttp-jinja2>=1.5.0; extra == "web"
 Provides-Extra: build
+Requires-Dist: PyInstaller>=5.0.0; extra == "build"
+Requires-Dist: wheel>=0.37.0; extra == "build"
+Requires-Dist: twine>=4.0.0; extra == "build"
 Provides-Extra: all
+Requires-Dist: mcp-framework[build,dev,web]; extra == "all"
+Dynamic: author
+Dynamic: home-page
+Dynamic: license-file
+Dynamic: requires-python
 
 # MCP Framework
 

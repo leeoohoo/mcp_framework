@@ -8,7 +8,7 @@ with open(os.path.join(here, "README.md"), encoding="utf-8") as f:
 
 setup(
     name="mcp-framework",
-    version="0.1.0",
+    version="0.1.1",
     description="一个强大且易用的 MCP (Model Context Protocol) 服务器开发框架",
     long_description=long_description,
     long_description_content_type="text/markdown",
