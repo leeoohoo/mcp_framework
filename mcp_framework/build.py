@@ -201,15 +201,21 @@ class MCPServerBuilder:
             requirements = self.get_requirements_for_script(script_path)
             for req in requirements:
                 pkg_name = req.split('==')[0].split('>=')[0].split('<=')[0].strip()
-                cmd.extend(["--collect-all", pkg_name])
+                if pkg_name != "mcp-framework":  # 避免重复添加
+                    cmd.extend(["--collect-all", pkg_name])
             
-            # 添加 MCP Framework 的隐藏导入
+            # 添加 MCP Framework 的完整收集
+            cmd.extend(["--collect-all", "mcp_framework"])
+            
+            # 添加额外的隐藏导入以确保所有模块都被包含
             mcp_framework_imports = [
                 "mcp_framework", "mcp_framework.core", "mcp_framework.core.base",
                 "mcp_framework.core.decorators", "mcp_framework.core.config",
                 "mcp_framework.core.launcher", "mcp_framework.core.utils",
                 "mcp_framework.server", "mcp_framework.server.http_server",
-                "mcp_framework.web"
+                "mcp_framework.server.handlers", "mcp_framework.server.middleware",
+                "mcp_framework.web", "mcp_framework.web.config_page",
+                "mcp_framework.web.setup_page", "mcp_framework.web.test_page"
             ]
             for imp in mcp_framework_imports:
                 cmd.extend(["--hidden-import", imp])
