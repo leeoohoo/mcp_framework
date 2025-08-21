@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Server Test - {{server_name}}</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #4a5568;
+            margin-bottom: 10px;
+        }
+
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: 500;
+            background: #c6f6d5;
+            color: #2f855a;
+            border: 1px solid #9ae6b4;
+        }
+
+        .tools-section, .resources-section {
+            margin-bottom: 30px;
+        }
+
+        .section-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .tool-card, .resource-card {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+        }
+
+        .tool-name, .resource-name {
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 5px;
+        }
+
+        .tool-description, .resource-description {
+            color: #718096;
+            margin-bottom: 15px;
+        }
+
+        .test-form {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .form-group {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #4a5568;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .param-info {
+            font-size: 12px;
+            color: #718096;
+            margin-bottom: 3px;
+        }
+
+        .param-required {
+            color: #e53e3e;
+            font-weight: 600;
+        }
+
+        .param-optional {
+            color: #38a169;
+        }
+
+        .param-type {
+            background: #edf2f7;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 11px;
+        }
+
+        input, textarea, select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+
+        button {
+            padding: 10px 20px;
+            background: #4299e1;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+            white-space: nowrap;
+            min-width: 80px;
+        }
+
+        button:hover {
+            background: #3182ce;
+            transform: translateY(-1px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        /* 停止按钮样式 */
+        button[style*="background: rgb(245, 101, 101)"] {
+            background: #f56565 !important;
+        }
+
+        button[style*="background: rgb(245, 101, 101)"]:hover {
+            background: #e53e3e !important;
+        }
+
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            background: #edf2f7;
+            border-radius: 6px;
+            border-left: 4px solid #4299e1;
+            display: none;
+        }
+
+        .result.success {
+            background: #f0fff4;
+            border-left-color: #48bb78;
+        }
+
+        .result.error {
+            background: #fff5f5;
+            border-left-color: #f56565;
+        }
+
+        .navigation {
+            text-align: center;
+            margin-top: 30px;
+        }
+
+        .nav-link {
+            color: #4299e1;
+            text-decoration: none;
+            margin: 0 15px;
+            padding: 10px 20px;
+            border: 1px solid #4299e1;
+            border-radius: 6px;
+            display: inline-block;
+            transition: all 0.2s;
+        }
+
+        .nav-link:hover {
+            background: #4299e1;
+            color: white;
+        }
+
+        pre {
+            background: #1a202c;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 13px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #718096;
+        }
+
+        .empty-state .icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧪 MCP Server Test</h1>
+            <p>测试 <strong>{{server_name}}</strong> v{{server_version}} 的功能</p>
+        </div>
+
+        <div class="status">
+            ✅ 服务器正在运行
+        </div>
+
+        <div class="tools-section">
+            <div class="section-title">
+                <span>🔧</span>
+                可用工具
+            </div>
+            <div id="tools-container">
+                <div class="empty-state">
+                    <div class="icon">⏳</div>
+                    <p>正在加载工具...</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="resources-section">
+            <div class="section-title">
+                <span>📁</span>
+                可用资源
+            </div>
+            <div id="resources-container">
+                <div class="empty-state">
+                    <div class="icon">⏳</div>
+                    <p>正在加载资源...</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="navigation">
+            <a href="/setup" class="nav-link">⚙️ 服务器设置</a>
+            <a href="/config" class="nav-link">🔧 系统配置</a>
+            <a href="/health" class="nav-link">💚 健康检查</a>
+            <a href="/info" class="nav-link">ℹ️ 服务器信息</a>
+        </div>
+    </div>
+
+    <script>
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', async function() {
+            await loadStreamingInfo();
+            loadTools();
+            loadResources();
+        });
+
+        // 加载工具列表
+        async function loadTools() {
+            try {
+                const response = await fetch('/mcp', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: 1,
+                        method: 'tools/list'
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.result && result.result.tools) {
+                    renderTools(result.result.tools);
+                } else {
+                    showEmptyState('tools-container', '🔧', '暂无可用工具');
+                }
+            } catch (error) {
+                console.error('Failed to load tools:', error);
+                showEmptyState('tools-container', '❌', '加载工具失败');
+            }
+        }
+
+        // 渲染工具
+        function renderTools(tools) {
+            const container = document.getElementById('tools-container');
+            container.innerHTML = '';
+
+            // 存储工具信息到全局变量
+            window.mcpTools = tools;
+
+            if (tools.length === 0) {
+                showEmptyState('tools-container', '🔧', '暂无可用工具');
+                return;
+            }
+
+            tools.forEach(tool => {
+                const toolCard = document.createElement('div');
+                toolCard.className = 'tool-card';
+
+                const toolName = document.createElement('div');
+                toolName.className = 'tool-name';
+                const supportsStreaming = streamingTools.includes(tool.name);
+                const streamingBadge = supportsStreaming ? ' 🌊' : ' 📄';
+                const streamingTitle = supportsStreaming ? '支持流式输出' : '仅支持HTTP';
+                const streamingType = supportsStreaming ? 'SSE' : 'HTTP';
+                toolName.innerHTML = tool.name + streamingBadge + ' <span style="font-size: 12px; color: #718096; font-weight: normal;" title="' + streamingTitle + '">(' + streamingType + ')</span>';
+
+                const toolDescription = document.createElement('div');
+                toolDescription.className = 'tool-description';
+                toolDescription.textContent = tool.description;
+
+                const testForm = document.createElement('div');
+                testForm.className = 'test-form';
+
+                // 创建参数输入框
+                const properties = tool.input_schema?.properties || {};
+                const required = tool.input_schema?.required || [];
+                
+                Object.keys(properties).forEach(paramName => {
+                    const formGroup = document.createElement('div');
+                    formGroup.className = 'form-group';
+
+                    const label = document.createElement('label');
+                    const isRequired = required.includes(paramName);
+                    label.innerHTML = paramName + (isRequired ? ' <span class="param-required">*</span>' : ' <span class="param-optional">(可选)</span>');
+
+                    const property = properties[paramName];
+                    
+                    // 添加参数信息
+                    const paramInfo = document.createElement('div');
+                    paramInfo.className = 'param-info';
+                    let infoText = '';
+                    if (property.type) {
+                        infoText += '<span class="param-type">' + property.type + '</span> ';
+                    }
+                    if (property.description) {
+                        infoText += property.description;
+                    }
+                    if (property.default !== undefined) {
+                        infoText += ' (默认: ' + JSON.stringify(property.default) + ')';
+                    }
+                    if (property.minimum !== undefined || property.maximum !== undefined) {
+                        infoText += ' (范围: ' + (property.minimum || '-∞') + ' ~ ' + (property.maximum || '+∞') + ')';
+                    }
+                    if (property.enum) {
+                        infoText += ' (可选值: ' + property.enum.join(', ') + ')';
+                    }
+                    paramInfo.innerHTML = infoText;
+
+                    const input = document.createElement('input');
+
+                    // 根据JSON Schema类型设置正确的输入类型
+                    switch (property.type) {
+                        case 'integer':
+                        case 'number':
+                            input.type = 'number';
+                            if (property.minimum !== undefined) {
+                                input.min = property.minimum;
+                            }
+                            if (property.maximum !== undefined) {
+                                input.max = property.maximum;
+                            }
+                            if (property.type === 'integer') {
+                                input.step = '1';
+                            }
+                            if (property.default !== undefined) {
+                                input.value = property.default;
+                            }
+                            break;
+                        case 'boolean':
+                            input.type = 'checkbox';
+                            if (property.default !== undefined) {
+                                input.checked = property.default;
+                            }
+                            break;
+                        case 'array':
+                            input.type = 'text';
+                            input.placeholder = 'JSON数组格式，如 ["item1", "item2"]';
+                            if (property.default !== undefined) {
+                                input.value = JSON.stringify(property.default);
+                            }
+                            break;
+                        default:
+                            input.type = 'text';
+                            if (property.enum) {
+                                // 如果有枚举值，创建下拉选择
+                                const select = document.createElement('select');
+                                select.name = paramName;
+                                
+                                // 添加空选项（如果不是必需的）
+                                if (!isRequired) {
+                                    const emptyOption = document.createElement('option');
+                                    emptyOption.value = '';
+                                    emptyOption.textContent = '-- 请选择 --';
+                                    select.appendChild(emptyOption);
+                                }
+                                
+                                property.enum.forEach(enumValue => {
+                                    const option = document.createElement('option');
+                                    option.value = enumValue;
+                                    option.textContent = enumValue;
+                                    if (property.default === enumValue) {
+                                        option.selected = true;
+                                    }
+                                    select.appendChild(option);
+                                });
+                                
+                                formGroup.appendChild(label);
+                                formGroup.appendChild(paramInfo);
+                                formGroup.appendChild(select);
+                                testForm.appendChild(formGroup);
+                                return;
+                            } else {
+                                if (property.default !== undefined) {
+                                    input.value = property.default;
+                                }
+                                input.placeholder = property.description || '';
+                            }
+                    }
+
+                    input.name = paramName;
+                    if (isRequired) {
+                        input.required = true;
+                    }
+
+                    formGroup.appendChild(label);
+                    formGroup.appendChild(paramInfo);
+                    formGroup.appendChild(input);
+                    testForm.appendChild(formGroup);
+                });
+
+                const testButton = document.createElement('button');
+                testButton.textContent = '测试';
+                testButton.id = 'test-btn-' + tool.name;
+                testButton.onclick = () => handleTestButtonClick(tool.name, testForm, testButton);
+                testForm.appendChild(testButton);
+
+                const result = document.createElement('div');
+                result.className = 'result';
+                result.id = 'result-' + tool.name;
+
+                toolCard.appendChild(toolName);
+                toolCard.appendChild(toolDescription);
+                toolCard.appendChild(testForm);
+                toolCard.appendChild(result);
+                container.appendChild(toolCard);
+            });
+        }
+
+        // 检查工具是否支持流式输出
+        let streamingTools = [];
+
+        // 跟踪活跃的流式会话
+        let activeStreams = new Map(); // toolName -> { sessionId, reader, abortController }
+
+        // 获取支持流式输出的工具列表
+        async function loadStreamingInfo() {
+            try {
+                const response = await fetch('/info');
+                const data = await response.json();
+                streamingTools = data.streaming_tools || [];
+            } catch (error) {
+                console.warn('Failed to load streaming info:', error);
+            }
+        }
+
+        // 处理测试/停止按钮点击
+        async function handleTestButtonClick(toolName, formElement, buttonElement) {
+            // 检查是否有活跃的流式会话
+            if (activeStreams.has(toolName)) {
+                // 停止流式输出
+                await stopTool(toolName, buttonElement);
+            } else {
+                // 开始测试
+                await testTool(toolName, formElement, buttonElement);
+            }
+        }
+
+        // 停止工具流式输出
+        async function stopTool(toolName, buttonElement) {
+            const streamInfo = activeStreams.get(toolName);
+            if (!streamInfo) return;
+
+            try {
+                // 取消流式读取
+                if (streamInfo.abortController) {
+                    streamInfo.abortController.abort();
+                }
+
+                // 调用停止API（如果有session_id）
+                if (streamInfo.sessionId) {
+                    const response = await fetch('/api/streaming/stop', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            session_id: streamInfo.sessionId
+                        })
+                    });
+
+                    const result = await response.json();
+                    console.log('Stop API result:', result);
+                }
+
+                // 清理会话
+                activeStreams.delete(toolName);
+
+                // 更新按钮状态
+                buttonElement.textContent = '测试';
+                buttonElement.style.background = '#4299e1';
+
+                // 显示停止消息
+                const resultElement = document.getElementById('result-' + toolName);
+                if (resultElement) {
+                    resultElement.className = 'result';
+                    resultElement.innerHTML = '<strong>🛑 已停止:</strong> 流式输出已被用户停止';
+                }
+
+            } catch (error) {
+                console.error('Stop failed:', error);
+            }
+        }
+
+        // 测试工具
+        async function testTool(toolName, formElement, buttonElement) {
+            const inputs = formElement.querySelectorAll('input, select');
+            const arguments = {};
+
+            // 获取工具的Schema信息
+            const tool = window.mcpTools.find(t => t.name === toolName);
+            const properties = tool?.inputSchema?.properties || {};
+
+            inputs.forEach(input => {
+                const value = input.type === 'checkbox' ? input.checked : input.value.trim();
+                const property = properties[input.name] || {};
+
+                if (value !== '' || input.type === 'checkbox') {
+                    // 根据输入类型处理值
+                    switch (input.type) {
+                        case 'number':
+                            if (value !== '') {
+                                const numValue = parseFloat(value);
+                                if (!isNaN(numValue)) {
+                                    // 检查是否是整数类型（step为1表示整数）
+                                    arguments[input.name] = input.step === '1' ? parseInt(value) : numValue;
+                                }
+                            }
+                            break;
+                        case 'checkbox':
+                            arguments[input.name] = input.checked;
+                            break;
+                        case 'text':
+                            if (value !== '') {
+                                // 尝试解析JSON数组
+                                if (value.startsWith('[') && value.endsWith(']')) {
+                                    try {
+                                        arguments[input.name] = JSON.parse(value);
+                                    } catch (e) {
+                                        arguments[input.name] = value;
+                                    }
+                                } else {
+                                    arguments[input.name] = value;
+                                }
+                            }
+                            break;
+                        default:
+                            if (value !== '') {
+                                arguments[input.name] = value;
+                            }
+                    }
+                } else if (property.default !== undefined) {
+                    // 如果没有输入值但有默认值，使用默认值
+                    arguments[input.name] = property.default;
+                }
+            });
+
+            const resultElement = document.getElementById('result-' + toolName);
+            resultElement.style.display = 'block';
+            resultElement.className = 'result';
+
+            // 检查是否支持流式输出
+            const supportsStreaming = streamingTools.includes(toolName);
+
+            if (supportsStreaming) {
+                // 更新按钮为停止状态
+                buttonElement.textContent = '停止';
+                buttonElement.style.background = '#f56565';
+
+                resultElement.innerHTML = '🔄 使用流式输出测试中...';
+                await testToolWithSSE(toolName, arguments, resultElement, buttonElement);
+            } else {
+                resultElement.innerHTML = '🔄 使用HTTP测试中...';
+                await testToolWithHTTP(toolName, arguments, resultElement);
+                // HTTP调用完成后恢复按钮状态
+                buttonElement.textContent = '测试';
+                buttonElement.style.background = '#4299e1';
+            }
+        }
+
+        // 使用HTTP测试工具
+        async function testToolWithHTTP(toolName, arguments, resultElement) {
+            try {
+                const response = await fetch('/mcp', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: Date.now(),
+                        method: 'tools/call',
+                        params: {
+                            name: toolName,
+                            arguments: arguments
+                        }
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.result) {
+                    resultElement.className = 'result success';
+                    const content = result.result.content?.[0]?.text || JSON.stringify(result.result, null, 2);
+                    resultElement.innerHTML = '<strong>✅ HTTP成功:</strong><pre>' + content + '</pre>';
+                } else if (result.error) {
+                    resultElement.className = 'result error';
+                    resultElement.innerHTML = '<strong>❌ HTTP错误:</strong> ' + result.error.message;
+                }
+            } catch (error) {
+                resultElement.className = 'result error';
+                resultElement.innerHTML = '<strong>🚫 HTTP请求失败:</strong> ' + error.message;
+            }
+        }
+
+        // 使用SSE测试工具
+        async function testToolWithSSE(toolName, arguments, resultElement, buttonElement) {
+            try {
+                console.log('Creating SSE request for tool:', toolName, 'with arguments:', arguments);
+
+                // 创建AbortController用于取消请求
+                const abortController = new AbortController();
+
+                const response = await fetch('/sse/tool/call', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'text/event-stream',
+                        'Cache-Control': 'no-cache'
+                    },
+                    body: JSON.stringify({
+                        tool_name: toolName,
+                        arguments: arguments
+                    }),
+                    signal: abortController.signal
+                });
+
+                console.log('SSE response status:', response.status);
+                console.log('SSE response headers:', Object.fromEntries(response.headers.entries()));
+
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                }
+
+                // 获取会话ID
+                const sessionId = response.headers.get('X-Session-ID');
+                console.log('Session ID:', sessionId);
+
+                console.log('Starting to read SSE stream...');
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                // 注册活跃流式会话
+                activeStreams.set(toolName, {
+                    sessionId: sessionId,
+                    reader: reader,
+                    abortController: abortController
+                });
+                let buffer = '';
+                let output = '';
+                let eventLog = [];
+
+                resultElement.innerHTML = '<strong>🔄 SSE流式输出:</strong><div id="streaming-container"><pre id="streaming-output"></pre><div id="event-log"></div></div>';
+                const outputElement = document.getElementById('streaming-output');
+                const eventLogElement = document.getElementById('event-log');
+
+                try {
+                    while (true) {
+                         const { done, value } = await reader.read();
+                         console.log('Stream read result:', { done, valueLength: value ? value.length : 0 });
+
+                         if (done) {
+                             console.log('Stream reading completed');
+                             break;
+                         }
+
+                         buffer += decoder.decode(value, { stream: true });
+                         console.log('Current buffer:', buffer);
+
+                         const lines = buffer.split('\n');
+                         buffer = lines.pop(); // 保留不完整的行
+
+                    for (const line of lines) {
+                        console.log('Processing line:', line);
+                        if (line.trim() === '') continue;
+
+                        if (line.startsWith('event:')) {
+                            const eventType = line.substring(6).trim();
+                            eventLog.push('[Event: ' + eventType + ']');
+                            console.log('SSE Event:', eventType);
+                        } else if (line.startsWith('data:')) {
+                            const data = line.substring(5).trim();
+                            console.log('SSE Raw Data:', data);
+                            try {
+                                const eventData = JSON.parse(data);
+                                console.log('SSE Parsed Data:', eventData);
+                                eventLog.push('[Data: ' + JSON.stringify(eventData) + ']');
+
+                                if (eventData.chunk) {
+                                    output += eventData.chunk + '\n';
+                                    outputElement.textContent = output;
+                                    outputElement.scrollTop = outputElement.scrollHeight;
+                                } else if (eventData.error) {
+                                    resultElement.className = 'result error';
+                                    resultElement.innerHTML = '<strong>❌ SSE错误:</strong> ' + eventData.error;
+                                    return;
+                                } else if (eventData.type) {
+                                    // 处理流式工具的结构化数据
+                                    if (eventData.type === 'progress') {
+                                        output += '🔄 ' + eventData.message + '\n';
+                                    } else if (eventData.type === 'data') {
+                                        output += '📊 ' + eventData.field + ': ' + eventData.value + '\n';
+                                    } else if (eventData.type === 'result') {
+                                        output += '✅ 最终结果:\n' + JSON.stringify(eventData.data, null, 2) + '\n';
+                                    } else {
+                                        output += '[' + eventData.type + '] ' + JSON.stringify(eventData, null, 2) + '\n';
+                                    }
+                                    outputElement.textContent = output;
+                                    outputElement.scrollTop = outputElement.scrollHeight;
+                                } else {
+                                    // 显示其他类型的数据
+                                    output += JSON.stringify(eventData, null, 2) + '\n';
+                                    outputElement.textContent = output;
+                                    outputElement.scrollTop = outputElement.scrollHeight;
+                                }
+                            } catch (e) {
+                                // 如果不是JSON，直接显示原始数据
+                                output += data + '\n';
+                                outputElement.textContent = output;
+                                outputElement.scrollTop = outputElement.scrollHeight;
+                                eventLog.push('[Raw Data: ' + data + ']');
+                            }
+                        }
+
+                        // 更新事件日志
+                        eventLogElement.innerHTML = '<details><summary>事件日志 (' + eventLog.length + ')</summary><pre>' + eventLog.join('\\n') + '</pre></details>';
+                    }
+                }
+
+                resultElement.className = 'result success';
+                if (output.trim()) {
+                    resultElement.innerHTML = '<strong>✅ SSE成功:</strong><pre>' + output + '</pre>';
+                } else {
+                    resultElement.innerHTML = '<strong>✅ SSE完成:</strong> 流式传输已完成，但没有接收到数据内容。<br>' + eventLogElement.innerHTML;
+                }
+
+                // 清理会话并恢复按钮状态
+                activeStreams.delete(toolName);
+                buttonElement.textContent = '测试';
+                buttonElement.style.background = '#4299e1';
+
+            } catch (streamError) {
+                    console.error('Error reading SSE stream:', streamError);
+                    resultElement.className = 'result error';
+
+                    // 检查是否是用户主动取消
+                    if (streamError.name === 'AbortError') {
+                        resultElement.innerHTML = '<strong>🛑 已停止:</strong> 流式输出已被用户停止';
+                    } else {
+                        resultElement.innerHTML = '<strong>🚫 SSE流读取失败:</strong> ' + streamError.message;
+                    }
+
+                    // 清理会话并恢复按钮状态
+                    activeStreams.delete(toolName);
+                    buttonElement.textContent = '测试';
+                    buttonElement.style.background = '#4299e1';
+                }
+
+            } catch (error) {
+                console.error('SSE request failed:', error);
+                resultElement.className = 'result error';
+
+                // 检查是否是用户主动取消
+                if (error.name === 'AbortError') {
+                    resultElement.innerHTML = '<strong>🛑 已停止:</strong> 流式输出已被用户停止';
+                } else {
+                    resultElement.innerHTML = '<strong>🚫 SSE请求失败:</strong> ' + error.message;
+                }
+
+                // 清理会话并恢复按钮状态
+                activeStreams.delete(toolName);
+                buttonElement.textContent = '测试';
+                buttonElement.style.background = '#4299e1';
+            }
+        }
+
+        // 加载资源列表
+        async function loadResources() {
+            try {
+                const response = await fetch('/mcp', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: 2,
+                        method: 'resources/list'
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.result && result.result.resources) {
+                    renderResources(result.result.resources);
+                } else {
+                    showEmptyState('resources-container', '📁', '暂无可用资源');
+                }
+            } catch (error) {
+                console.error('Failed to load resources:', error);
+                showEmptyState('resources-container', '❌', '加载资源失败');
+            }
+        }
+
+        // 渲染资源
+        function renderResources(resources) {
+            const container = document.getElementById('resources-container');
+            container.innerHTML = '';
+
+            if (resources.length === 0) {
+                showEmptyState('resources-container', '📁', '暂无可用资源');
+                return;
+            }
+
+            resources.forEach(resource => {
+                const resourceCard = document.createElement('div');
+                resourceCard.className = 'resource-card';
+
+                const resourceName = document.createElement('div');
+                resourceName.className = 'resource-name';
+                resourceName.textContent = resource.name;
+
+                const resourceDescription = document.createElement('div');
+                resourceDescription.className = 'resource-description';
+                resourceDescription.textContent = resource.description;
+
+                const resourceUri = document.createElement('div');
+                resourceUri.innerHTML = '<strong>URI:</strong> ' + resource.uri;
+
+                const testButton = document.createElement('button');
+                testButton.textContent = '读取资源';
+                testButton.onclick = () => testResource(resource.uri);
+
+                const result = document.createElement('div');
+                result.className = 'result';
+                result.id = 'resource-result-' + resource.uri.replace(/[^a-zA-Z0-9]/g, '');
+
+                resourceCard.appendChild(resourceName);
+                resourceCard.appendChild(resourceDescription);
+                resourceCard.appendChild(resourceUri);
+                resourceCard.appendChild(testButton);
+                resourceCard.appendChild(result);
+                container.appendChild(resourceCard);
+            });
+        }
+
+        // 测试资源
+        async function testResource(uri) {
+            const resultElement = document.getElementById('resource-result-' + uri.replace(/[^a-zA-Z0-9]/g, ''));
+            resultElement.style.display = 'block';
+            resultElement.className = 'result';
+            resultElement.innerHTML = '🔄 读取中...';
+
+            try {
+                const response = await fetch('/mcp', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: Date.now(),
+                        method: 'resources/read',
+                        params: {
+                            uri: uri
+                        }
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.result) {
+                    resultElement.className = 'result success';
+                    resultElement.innerHTML = '<strong>✅ 成功:</strong><pre>' + JSON.stringify(result.result, null, 2) + '</pre>';
+                } else if (result.error) {
+                    resultElement.className = 'result error';
+                    resultElement.innerHTML = '<strong>❌ 错误:</strong> ' + result.error.message;
+                }
+            } catch (error) {
+                resultElement.className = 'result error';
+                resultElement.innerHTML = '<strong>🚫 请求失败:</strong> ' + error.message;
+            }
+        }
+
+        // 显示空状态
+        function showEmptyState(containerId, icon, message) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '<div class="empty-state"><div class="icon">' + icon + '</div><p>' + message + '</p></div>';
+        }
+    </script>
+</body>
+</html>

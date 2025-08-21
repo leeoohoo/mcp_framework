@@ -29,3 +29,4 @@ mcp_framework/web/__init__.py
 mcp_framework/web/config_page.py
 mcp_framework/web/setup_page.py
 mcp_framework/web/test_page.py
+mcp_framework/web/templates/test_page.html

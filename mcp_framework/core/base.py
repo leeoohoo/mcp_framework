@@ -6,15 +6,13 @@ MCP 框架基础类定义
 import logging
 from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional, AsyncGenerator, Callable, Set
+from dataclasses import dataclass
 import inspect
 import asyncio
 import uuid
 
 from .config import ServerParameter, ServerConfigManager
 from .utils import get_data_dir
-
-
-
 
 
 class BaseMCPServer(ABC):
@@ -24,8 +22,8 @@ class BaseMCPServer(ABC):
         self.name = name
         self.version = version
         self.description = description
-        self.tools: List = []
-        self.resources: List = []
+        self.tools: List[dict] = []
+        self.resources: List[dict] = []
         self._initialized = False
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.data_dir = get_data_dir()
@@ -70,36 +68,40 @@ class BaseMCPServer(ABC):
         """验证工具调用参数的类型和值"""
         properties = input_schema.get('properties', {})
         required = input_schema.get('required', [])
-        
+
         # 检查必需参数
         for param_name in required:
             if param_name not in arguments:
                 raise ValueError(f"Tool '{tool_name}' missing required parameter: {param_name}")
-        
+
         # 验证参数类型
         for param_name, value in arguments.items():
             if param_name in properties:
                 param_spec = properties[param_name]
                 param_type = param_spec.get('type', 'string')
-                
+
                 # 类型验证
                 if not self._validate_parameter_type(value, param_type):
-                    raise TypeError(f"Tool '{tool_name}' parameter '{param_name}' expected {param_type}, got {type(value).__name__}")
-                
+                    raise TypeError(
+                        f"Tool '{tool_name}' parameter '{param_name}' expected {param_type}, got {type(value).__name__}")
+
                 # 数值范围验证
                 if param_type in ['integer', 'number']:
                     minimum = param_spec.get('minimum')
                     maximum = param_spec.get('maximum')
                     if minimum is not None and value < minimum:
-                        raise ValueError(f"Tool '{tool_name}' parameter '{param_name}' value {value} is below minimum {minimum}")
+                        raise ValueError(
+                            f"Tool '{tool_name}' parameter '{param_name}' value {value} is below minimum {minimum}")
                     if maximum is not None and value > maximum:
-                        raise ValueError(f"Tool '{tool_name}' parameter '{param_name}' value {value} is above maximum {maximum}")
-                
+                        raise ValueError(
+                            f"Tool '{tool_name}' parameter '{param_name}' value {value} is above maximum {maximum}")
+
                 # 枚举值验证
                 enum_values = param_spec.get('enum')
                 if enum_values and value not in enum_values:
-                    raise ValueError(f"Tool '{tool_name}' parameter '{param_name}' value '{value}' not in allowed values: {enum_values}")
-    
+                    raise ValueError(
+                        f"Tool '{tool_name}' parameter '{param_name}' value '{value}' not in allowed values: {enum_values}")
+
     def _validate_parameter_type(self, value: Any, expected_type: str) -> bool:
         """验证参数类型是否匹配"""
         if expected_type == 'string':
@@ -116,7 +118,7 @@ class BaseMCPServer(ABC):
             return isinstance(value, dict)
         else:
             return True  # 未知类型，跳过验证
-    
+
     # 流式停止管理方法
     def start_streaming_session(self) -> str:
         """启动一个新的流式会话，返回会话ID"""
@@ -125,7 +127,7 @@ class BaseMCPServer(ABC):
         self._session_stop_flags[session_id] = False
         self.logger.debug(f"Started streaming session: {session_id}")
         return session_id
-    
+
     def stop_streaming_session(self, session_id: str) -> bool:
         """停止指定的流式会话"""
         if session_id in self._streaming_sessions:
@@ -133,7 +135,7 @@ class BaseMCPServer(ABC):
             self.logger.info(f"Stopped streaming session: {session_id}")
             return True
         return False
-    
+
     def stop_all_streaming(self) -> None:
         """停止所有流式输出"""
         self._stop_streaming = True
@@ -141,35 +143,36 @@ class BaseMCPServer(ABC):
         for session_id in self._streaming_sessions:
             self._session_stop_flags[session_id] = True
         self.logger.info("Stopped all streaming sessions")
-    
+
     def resume_streaming(self) -> None:
         """恢复流式输出（清除全局停止标志）"""
         self._stop_streaming = False
         self.logger.info("Resumed streaming")
-    
+
     def is_streaming_stopped(self, session_id: str = None) -> bool:
         """检查流式输出是否应该停止"""
         # 检查全局停止标志
         if self._stop_streaming:
             return True
-        
+
         # 检查特定会话停止标志
         if session_id and session_id in self._session_stop_flags:
             return self._session_stop_flags[session_id]
-        
+
         return False
-    
+
     def cleanup_streaming_session(self, session_id: str) -> None:
         """清理流式会话"""
         self._streaming_sessions.discard(session_id)
         self._session_stop_flags.pop(session_id, None)
         self.logger.debug(f"Cleaned up streaming session: {session_id}")
-    
+
     def get_active_streaming_sessions(self) -> List[str]:
         """获取所有活跃的流式会话ID"""
         return list(self._streaming_sessions)
-    
-    async def handle_tool_call_stream(self, tool_name: str, arguments: Dict[str, Any], session_id: str = None) -> AsyncGenerator[str, None]:
+
+    async def handle_tool_call_stream(self, tool_name: str, arguments: Dict[str, Any], session_id: str = None) -> \
+    AsyncGenerator[str, None]:
         """
         统一的流式工具调用处理器
         所有工具都通过此方法输出流式数据
@@ -177,11 +180,12 @@ class BaseMCPServer(ABC):
         # 如果没有提供session_id，自动创建一个
         if session_id is None:
             session_id = self.start_streaming_session()
-        
+
         try:
             # 尝试调用子类的流式实现
-            has_streaming_impl = hasattr(self, '_stream_handlers') and tool_name in getattr(self, '_stream_handlers', {})
-            
+            has_streaming_impl = hasattr(self, '_stream_handlers') and tool_name in getattr(self, '_stream_handlers',
+                                                                                            {})
+
             if has_streaming_impl:
                 # 使用子类的流式实现
                 async for chunk in self._handle_streaming_tool_call(tool_name, arguments, session_id):
@@ -204,7 +208,8 @@ class BaseMCPServer(ABC):
             if session_id:
                 self.cleanup_streaming_session(session_id)
 
-    async def _handle_streaming_tool_call(self, tool_name: str, arguments: Dict[str, Any], session_id: str = None) -> AsyncGenerator[str, None]:
+    async def _handle_streaming_tool_call(self, tool_name: str, arguments: Dict[str, Any], session_id: str = None) -> \
+    AsyncGenerator[str, None]:
         """
         处理真正支持流式输出的工具调用，子类应该重写此方法
         """
@@ -213,29 +218,31 @@ class BaseMCPServer(ABC):
         async for chunk in self._auto_chunk_result(result, tool_name, session_id):
             yield chunk
 
-    async def _auto_chunk_result(self, result: Any, tool_name: str, session_id: str = None) -> AsyncGenerator[str, None]:
+    async def _auto_chunk_result(self, result: Any, tool_name: str, session_id: str = None) -> AsyncGenerator[
+        str, None]:
         """
         自动将结果分割为流式块
         """
         # 获取工具的分割大小设置
-        tool = next((t for t in self.tools if t.name == tool_name), None)
-        chunk_size = tool.chunk_size if tool else 100
-        
+        tool = next((t for t in self.tools if t['name'] == tool_name), None)
+        chunk_size = tool.get('chunk_size', 100) if tool else 100
+
         # 转换结果为字符串
         result_str = str(result)
-        
+
         # 如果结果很短，直接输出
         if len(result_str) <= chunk_size:
             yield result_str
             return
-        
+
         # 分割长文本
-        self.logger.debug(f"Auto-chunking result for {tool_name}: {len(result_str)} chars into {chunk_size}-char chunks")
-        
+        self.logger.debug(
+            f"Auto-chunking result for {tool_name}: {len(result_str)} chars into {chunk_size}-char chunks")
+
         # 按行分割优先，避免破坏句子结构
         lines = result_str.split('\n')
         current_chunk = ""
-        
+
         for line in lines:
             # 如果当前行加上已有内容超过块大小
             if len(current_chunk) + len(line) + 1 > chunk_size and current_chunk:
@@ -249,7 +256,7 @@ class BaseMCPServer(ABC):
                     current_chunk += '\n' + line
                 else:
                     current_chunk = line
-        
+
         # 输出最后的块
         if current_chunk:
             yield current_chunk
@@ -260,16 +267,16 @@ class BaseMCPServer(ABC):
         这是一个通用的chunk处理逻辑，可以被子类复用
         """
         import json
-        
+
         # 添加调试日志
         self.logger.debug(f"_normalize_stream_chunk received: {type(chunk)} - {chunk}")
-        
+
         # 如果chunk是字典类型，保持其结构化格式
         if isinstance(chunk, dict):
             result = json.dumps(chunk, ensure_ascii=False)
             self.logger.debug(f"_normalize_stream_chunk returning dict as JSON: {result}")
             return result
-        
+
         # 确保chunk是字符串格式，不是JSON
         if isinstance(chunk, str) and not chunk.startswith('{'):
             self.logger.debug(f"_normalize_stream_chunk returning plain string: {chunk}")
@@ -306,10 +313,10 @@ class BaseMCPServer(ABC):
         """
         import json
         import logging
-        
+
         logger = logging.getLogger(self.__class__.__name__)
         logger.error(f"流式工具调用失败 {tool_name}: {error}")
-        
+
         return json.dumps({
             "error": f"流式工具调用失败: {str(error)}"
         }, ensure_ascii=False)
@@ -365,36 +372,36 @@ class BaseMCPServer(ABC):
         """获取配置值"""
         return self.server_config.get(key, default)
 
-    def add_tool(self, tool) -> None:
+    def add_tool(self, tool: dict) -> None:
         """添加工具（去重：同名工具将被替换而不是重复添加）"""
         for idx, existing in enumerate(self.tools):
-            if existing.name == tool.name:
+            if existing.get('name') == tool.get('name'):
                 self.tools[idx] = tool
-                self.logger.info(f"Replaced existing tool: {tool.name}")
+                self.logger.info(f"Replaced existing tool: {tool.get('name')}")
                 break
         else:
             self.tools.append(tool)
-            self.logger.info(f"Added tool: {tool.name}")
+            self.logger.info(f"Added tool: {tool.get('name')}")
 
-    def add_resource(self, resource) -> None:
+    def add_resource(self, resource: dict) -> None:
         """添加资源（去重：同 URI 的资源将被替换而不是重复添加）"""
         for idx, existing in enumerate(self.resources):
             # 以 URI 作为资源的唯一标识；若缺失则退化到名称判定
-            if getattr(existing, 'uri', None) == getattr(resource, 'uri', None) or (
-                getattr(existing, 'uri', None) is None and existing.name == resource.name
+            if existing.get('uri') == resource.get('uri') or (
+                    existing.get('uri') is None and existing.get('name') == resource.get('name')
             ):
                 self.resources[idx] = resource
-                self.logger.info(f"Replaced existing resource: {resource.uri or resource.name}")
+                self.logger.info(f"Replaced existing resource: {resource.get('uri') or resource.get('name')}")
                 break
         else:
             self.resources.append(resource)
-            self.logger.info(f"Added resource: {resource.name}")
+            self.logger.info(f"Added resource: {resource.get('name')}")
 
     def _log_config_info(self, config: Dict[str, Any], sensitive_keys: List[str] = None) -> None:
         """记录配置信息日志"""
         if sensitive_keys is None:
             sensitive_keys = ['api_key', 'password', 'token', 'secret']
-        
+
         # 记录基本配置信息
         config_items = []
         for key, value in config.items():
@@ -404,18 +411,19 @@ class BaseMCPServer(ABC):
                 config_items.append(f"{key}={value[:100]}...")
             else:
                 config_items.append(f"{key}={value}")
-        
+
         if config_items:
             self.logger.info(f"🔧 配置信息: {', '.join(config_items)}")
-    
+
     def _log_tools_info(self) -> None:
         """记录工具信息日志"""
         if self.tools:
             self.logger.info(f"🛠️ 初始化工具列表 (共{len(self.tools)}个，全部支持流式输出):")
             for tool in self.tools:
-                chunk_info = f" (分块大小: {tool.chunk_size})" if hasattr(tool, 'chunk_size') else ""
-                self.logger.info(f"  - {tool.name}: {tool.description}{chunk_info}")
-    
+                chunk_info = f" (分块大小: {tool.get('chunk_size', 100)})" if 'chunk_size' in tool else ""
+                self.logger.info(
+                    f"  - {tool.get('name', 'Unknown')}: {tool.get('description', 'No description')}{chunk_info}")
+
     def _validate_required_config(self, required_keys: List[str]) -> None:
         """验证必需的配置项"""
         missing_keys = []
@@ -423,42 +431,42 @@ class BaseMCPServer(ABC):
             value = self.server_config.get(key)
             if not value:
                 missing_keys.append(key)
-        
+
         if missing_keys:
             raise ValueError(f"缺少必需的配置项: {', '.join(missing_keys)}")
-    
+
     def _get_config_with_defaults(self, config_defaults: Dict[str, Any]) -> Dict[str, Any]:
         """获取配置值，如果不存在则使用默认值"""
         result = {}
         for key, default_value in config_defaults.items():
             result[key] = self.server_config.get(key, default_value)
         return result
-    
-    def _setup_decorators_and_log_config(self, required_keys: List[str] = None, 
-                                        config_defaults: Dict[str, Any] = None,
-                                        log_config: bool = True) -> Dict[str, Any]:
+
+    def _setup_decorators_and_log_config(self, required_keys: List[str] = None,
+                                         config_defaults: Dict[str, Any] = None,
+                                         log_config: bool = True) -> Dict[str, Any]:
         """通用的装饰器设置和配置处理流程"""
         # 触发装饰器注册（如果是 EnhancedMCPServer）
         if hasattr(self, 'setup_tools'):
             _ = self.setup_tools
         if hasattr(self, 'setup_server_params'):
             _ = self.setup_server_params
-        
+
         # 验证必需配置
         if required_keys:
             self._validate_required_config(required_keys)
-        
+
         # 获取配置值
         config_values = {}
         if config_defaults:
             config_values = self._get_config_with_defaults(config_defaults)
-        
+
         # 记录配置信息
         if log_config and config_values:
             self._log_config_info(config_values)
-        
+
         return config_values
-    
+
     async def startup(self) -> None:
         """服务器启动时调用"""
         if not self._initialized:
@@ -477,72 +485,102 @@ class BaseMCPServer(ABC):
             self.logger.info(f"MCP Server '{self.name}' shutdown completed")
 
 
-
+# EnhancedMCPTool类已被删除，因为MCPTool基类已被删除
 
 
 class EnhancedMCPServer(BaseMCPServer):
     """增强版MCP服务器，支持装饰器和自动工具分发"""
-    
+
     def __init__(self, name: str, version: str = "1.0.0", description: str = ""):
         super().__init__(name, version, description)
         self._tool_handlers: Dict[str, Callable] = {}
         self._stream_handlers: Dict[str, Callable] = {}
         self._resource_handlers: Dict[str, Callable] = {}
-        
+
         # 创建装饰器实例
         from .decorators import AnnotatedDecorators
         self.decorators = AnnotatedDecorators(self)
-    
-    def register_tool(self, name: str, description: str, input_schema: Dict[str, Any], 
-                     handler: Callable, chunk_size: int = 100,
-                     stream_handler: Optional[Callable] = None) -> None:
+
+    def register_tool(self, name: str, description: str, input_schema: Dict[str, Any],
+                      handler: Callable, chunk_size: int = 100,
+                      stream_handler: Optional[Callable] = None) -> None:
         """注册工具并绑定处理函数"""
-        from types import SimpleNamespace
-        tool = SimpleNamespace(
-            name=name,
-            description=description,
-            input_schema=input_schema,
-            chunk_size=chunk_size,
-            handler=handler,
-            stream_handler=stream_handler
-        )
-        
+        tool = {
+            'name': name,
+            'description': description,
+            'input_schema': input_schema,
+            'chunk_size': chunk_size,
+            'handler': handler,
+            'stream_handler': stream_handler
+        }
+
         self.add_tool(tool)
         self._tool_handlers[name] = handler
         if stream_handler:
             self._stream_handlers[name] = stream_handler
-    
-    def register_resource(self, uri: str, name: str, description: str, 
-                         handler: Callable, mime_type: str = 'text/plain') -> None:
+
+    def register_resource(self, uri: str, name: str, description: str,
+                          handler: Callable, mime_type: str = 'text/plain') -> None:
         """注册资源并绑定处理函数"""
-        from types import SimpleNamespace
-        resource = SimpleNamespace(
-            uri=uri,
-            name=name,
-            description=description,
-            mime_type=mime_type
-        )
-        
+        resource = {
+            'uri': uri,
+            'name': name,
+            'description': description,
+            'mime_type': mime_type
+        }
+
         self.add_resource(resource)
         self._resource_handlers[uri] = handler
-    
+
     async def handle_tool_call(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """自动分发工具调用到注册的处理函数"""
-        if tool_name not in self._tool_handlers:
+        # 首先检查普通工具处理器
+        if tool_name in self._tool_handlers:
+            handler = self._tool_handlers[tool_name]
+        # 如果不在普通处理器中，检查流式处理器（支持流式工具的非流式调用）
+        elif tool_name in self._stream_handlers:
+            handler = self._stream_handlers[tool_name]
+        else:
             raise ValueError(f"Tool '{tool_name}' not found")
-        
-        handler = self._tool_handlers[tool_name]
-        
+
+        # 如果是流式处理器，需要收集所有输出
+        if tool_name in self._stream_handlers and tool_name not in self._tool_handlers:
+            try:
+                # 获取工具的input_schema进行参数验证
+                tool = next((t for t in self.tools if t['name'] == tool_name), None)
+                if tool and tool.get('input_schema'):
+                    self._validate_arguments(tool_name, arguments, tool['input_schema'])
+
+                # 检查处理函数的签名
+                sig = inspect.signature(handler)
+                params = list(sig.parameters.keys())
+
+                # 调用流式处理器并收集所有输出
+                result_chunks = []
+                if params and params[0] == 'self':
+                    async_gen = handler(**arguments)
+                else:
+                    async_gen = handler(**arguments)
+
+                async for chunk in async_gen:
+                    result_chunks.append(str(chunk))
+
+                # 返回合并后的结果
+                return ''.join(result_chunks)
+            except Exception as e:
+                self.logger.error(f"Tool call failed for '{tool_name}': {e}")
+                raise
+
         try:
             # 获取工具的input_schema进行参数验证
-            tool = next((t for t in self.tools if t.name == tool_name), None)
-            if tool and tool.input_schema:
-                self._validate_arguments(tool_name, arguments, tool.input_schema)
-            
+            tool = next((t for t in self.tools if t['name'] == tool_name), None)
+            if tool and tool.get('input_schema'):
+                self._validate_arguments(tool_name, arguments, tool['input_schema'])
+
             # 检查处理函数的签名
             sig = inspect.signature(handler)
             params = list(sig.parameters.keys())
-            
+
             # 如果是实例方法，跳过self参数
             if params and params[0] == 'self':
                 if inspect.iscoroutinefunction(handler):
@@ -558,20 +596,21 @@ class EnhancedMCPServer(BaseMCPServer):
         except Exception as e:
             self.logger.error(f"Tool call failed for '{tool_name}': {e}")
             raise
-    
-    async def handle_tool_call_stream(self, tool_name: str, arguments: Dict[str, Any], session_id: str = None) -> AsyncGenerator[str, None]:
+
+    async def handle_tool_call_stream(self, tool_name: str, arguments: Dict[str, Any], session_id: str = None) -> \
+    AsyncGenerator[str, None]:
         """自动分发流式工具调用"""
         if tool_name in self._stream_handlers:
             handler = self._stream_handlers[tool_name]
             try:
                 # 获取工具的input_schema进行参数验证
-                tool = next((t for t in self.tools if t.name == tool_name), None)
-                if tool and tool.input_schema:
-                    self._validate_arguments(tool_name, arguments, tool.input_schema)
-                
+                tool = next((t for t in self.tools if t['name'] == tool_name), None)
+                if tool and tool.get('input_schema'):
+                    self._validate_arguments(tool_name, arguments, tool['input_schema'])
+
                 sig = inspect.signature(handler)
                 params = list(sig.parameters.keys())
-                
+
                 if params and params[0] == 'self':
                     # 调用handler获取async generator
                     async_gen = handler(**arguments)
@@ -593,18 +632,18 @@ class EnhancedMCPServer(BaseMCPServer):
             # 回退到普通调用
             async for chunk in super().handle_tool_call_stream(tool_name, arguments, session_id):
                 yield chunk
-    
+
     async def handle_resource_request(self, uri: str) -> Dict[str, Any]:
         """自动分发资源请求"""
         if uri not in self._resource_handlers:
             raise NotImplementedError(f"Resource not found: {uri}")
-        
+
         handler = self._resource_handlers[uri]
-        
+
         try:
             sig = inspect.signature(handler)
             params = list(sig.parameters.keys())
-            
+
             if params and params[0] == 'self':
                 if inspect.iscoroutinefunction(handler):
                     return await handler(uri)
@@ -618,7 +657,7 @@ class EnhancedMCPServer(BaseMCPServer):
         except Exception as e:
             self.logger.error(f"Resource request failed for '{uri}': {e}")
             raise
-    
+
     def get_server_parameters(self) -> List[ServerParameter]:
         """获取服务器参数定义，支持装饰器配置"""
         # 合并装饰器配置的参数和子类定义的参数
@@ -626,7 +665,7 @@ class EnhancedMCPServer(BaseMCPServer):
         decorator_params = []
         if hasattr(self, 'decorators') and self.decorators is not None:
             decorator_params = self.decorators.get_server_parameters() or []
-        
+
         # 如果子类重写了此方法，也获取其参数
         subclass_params = []
         if hasattr(super(), 'get_server_parameters'):
@@ -634,10 +673,10 @@ class EnhancedMCPServer(BaseMCPServer):
                 subclass_params = super().get_server_parameters() or []
             except (NotImplementedError, AttributeError):
                 pass
-        
+
         # 合并参数，装饰器参数优先
         all_params = decorator_params + subclass_params
-        
+
         # 去重（基于参数名）
         seen_names = set()
         unique_params = []
@@ -645,25 +684,25 @@ class EnhancedMCPServer(BaseMCPServer):
             if param.name not in seen_names:
                 unique_params.append(param)
                 seen_names.add(param.name)
-        
+
         return unique_params
-    
+
     # 提供装饰器访问
     @property
     def tool(self):
         """工具装饰器"""
         return self.decorators.tool
-    
+
     @property
     def streaming_tool(self):
         """流式工具装饰器"""
         return self.decorators.streaming_tool
-    
+
     @property
     def resource(self):
         """资源装饰器"""
         return self.decorators.resource
-    
+
     @property
     def server_param(self):
         """服务器参数装饰器"""
