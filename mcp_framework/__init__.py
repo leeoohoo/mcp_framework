@@ -4,8 +4,6 @@ MCP 框架 - 用于快速构建 MCP 服务器的 Python 框架
 
 from .core.base import (
     BaseMCPServer,
-    MCPTool,
-    MCPResource,
     EnhancedMCPServer  # 添加这行
 )
 
@@ -53,8 +51,6 @@ __version__ = "0.1.1"
 __all__ = [
     # 核心类
     'BaseMCPServer',
-    'MCPTool',
-    'MCPResource',
     'EnhancedMCPServer',  # 添加这行
     
     # 装饰器和参数规范

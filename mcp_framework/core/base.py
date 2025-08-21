@@ -6,7 +6,6 @@ MCP 框架基础类定义
 import logging
 from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional, AsyncGenerator, Callable, Set
-from dataclasses import dataclass
 import inspect
 import asyncio
 import uuid
@@ -15,40 +14,7 @@ from .config import ServerParameter, ServerConfigManager
 from .utils import get_data_dir
 
 
-@dataclass
-class MCPTool:
-    """MCP 工具定义"""
-    name: str
-    description: str
-    input_schema: Dict[str, Any]
-    # 移除 supports_streaming，所有工具都默认支持流式
-    chunk_size: int = 100  # 新增：非流式工具的自动分割大小（字符数）
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            'name': self.name,
-            'description': self.description,
-            'inputSchema': self.input_schema,
-            'supportsStreaming': True,  # 所有工具都支持流式
-            'chunkSize': self.chunk_size
-        }
-
-
-@dataclass
-class MCPResource:
-    """MCP 资源定义"""
-    uri: str
-    name: str
-    description: str
-    mime_type: str = 'text/plain'
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            'uri': self.uri,
-            'name': self.name,
-            'description': self.description,
-            'mimeType': self.mime_type
-        }
 
 
 class BaseMCPServer(ABC):
@@ -58,8 +24,8 @@ class BaseMCPServer(ABC):
         self.name = name
         self.version = version
         self.description = description
-        self.tools: List[MCPTool] = []
-        self.resources: List[MCPResource] = []
+        self.tools: List = []
+        self.resources: List = []
         self._initialized = False
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.data_dir = get_data_dir()
@@ -399,7 +365,7 @@ class BaseMCPServer(ABC):
         """获取配置值"""
         return self.server_config.get(key, default)
 
-    def add_tool(self, tool: MCPTool) -> None:
+    def add_tool(self, tool) -> None:
         """添加工具（去重：同名工具将被替换而不是重复添加）"""
         for idx, existing in enumerate(self.tools):
             if existing.name == tool.name:
@@ -410,7 +376,7 @@ class BaseMCPServer(ABC):
             self.tools.append(tool)
             self.logger.info(f"Added tool: {tool.name}")
 
-    def add_resource(self, resource: MCPResource) -> None:
+    def add_resource(self, resource) -> None:
         """添加资源（去重：同 URI 的资源将被替换而不是重复添加）"""
         for idx, existing in enumerate(self.resources):
             # 以 URI 作为资源的唯一标识；若缺失则退化到名称判定
@@ -511,11 +477,7 @@ class BaseMCPServer(ABC):
             self.logger.info(f"MCP Server '{self.name}' shutdown completed")
 
 
-@dataclass
-class EnhancedMCPTool(MCPTool):
-    """增强版MCP工具定义，支持直接绑定处理函数"""
-    handler: Optional[Callable] = None
-    stream_handler: Optional[Callable] = None
+
 
 
 class EnhancedMCPServer(BaseMCPServer):
@@ -535,7 +497,8 @@ class EnhancedMCPServer(BaseMCPServer):
                      handler: Callable, chunk_size: int = 100,
                      stream_handler: Optional[Callable] = None) -> None:
         """注册工具并绑定处理函数"""
-        tool = EnhancedMCPTool(
+        from types import SimpleNamespace
+        tool = SimpleNamespace(
             name=name,
             description=description,
             input_schema=input_schema,
@@ -552,7 +515,8 @@ class EnhancedMCPServer(BaseMCPServer):
     def register_resource(self, uri: str, name: str, description: str, 
                          handler: Callable, mime_type: str = 'text/plain') -> None:
         """注册资源并绑定处理函数"""
-        resource = MCPResource(
+        from types import SimpleNamespace
+        resource = SimpleNamespace(
             uri=uri,
             name=name,
             description=description,

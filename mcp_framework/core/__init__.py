@@ -2,7 +2,7 @@
 MCP 框架核心模块
 """
 
-from .base import BaseMCPServer, MCPTool, MCPResource, EnhancedMCPServer, EnhancedMCPTool
+from .base import BaseMCPServer, EnhancedMCPServer
 from .config import ServerConfig, ServerParameter, ConfigManager, ServerConfigManager
 from .utils import (
     is_frozen,
@@ -21,10 +21,7 @@ from .launcher import run_server, run_server_main
 
 __all__ = [
     'BaseMCPServer',
-    'MCPTool',
-    'MCPResource',
     'EnhancedMCPServer',
-    'EnhancedMCPTool',
     'ServerConfig',
     'ServerParameter',
     'ConfigManager',

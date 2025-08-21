@@ -174,6 +174,30 @@ class MCPServerBuilder:
             if not self.install_dependencies_in_venv(script_path, venv_pip):
                 return False
 
+            # 安装 mcp_framework 包本身到虚拟环境
+            print(f"   📦 Installing mcp_framework package...")
+            # 首先尝试从 PyPI 安装
+            result = subprocess.run([str(venv_pip), "install", "mcp-framework"],
+                                    capture_output=True, text=True)
+            if result.returncode != 0:
+                # 如果 PyPI 安装失败，尝试从当前项目目录安装
+                print(f"   ⚠️  PyPI installation failed, trying to install from current project...")
+                # 查找包含 mcp_framework 的项目根目录
+                current_dir = Path(__file__).parent  # mcp_framework 目录
+                project_root = current_dir.parent    # 项目根目录
+                
+                # 检查项目根目录是否包含 setup.py 或 pyproject.toml
+                if (project_root / "setup.py").exists() or (project_root / "pyproject.toml").exists():
+                    result = subprocess.run([str(venv_pip), "install", "-e", str(project_root)],
+                                            capture_output=True, text=True)
+                    if result.returncode != 0:
+                        print(f"   ❌ Failed to install mcp_framework: {result.stderr}")
+                        return False
+                else:
+                    print(f"   ❌ No setup.py or pyproject.toml found in {project_root}")
+                    return False
+            print(f"   ✅ mcp_framework installed successfully")
+
             # 安装 PyInstaller
             print(f"   🔧 Installing PyInstaller...")
             result = subprocess.run([str(venv_pip), "install", "pyinstaller>=5.0.0"],

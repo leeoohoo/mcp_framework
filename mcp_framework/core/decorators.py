@@ -17,7 +17,7 @@ try:
 except ImportError:
     from typing_extensions import Annotated
 
-from .base import MCPTool, MCPResource
+
 
 
 @dataclass
@@ -127,8 +127,9 @@ class AnnotatedDecorators:
             # 解析函数签名生成 input_schema
             input_schema = self._parse_annotated_schema(func)
             
-            # 创建 MCPTool（所有工具都支持流式）
-            mcp_tool = MCPTool(
+            # 创建工具对象（所有工具都支持流式）
+            from types import SimpleNamespace
+            mcp_tool = SimpleNamespace(
                 name=tool_name,
                 description=tool_description,
                 input_schema=input_schema,
@@ -159,8 +160,9 @@ class AnnotatedDecorators:
             # 解析函数签名生成 input_schema
             input_schema = self._parse_annotated_schema(func)
             
-            # 创建 MCPTool
-            mcp_tool = MCPTool(
+            # 创建工具对象
+            from types import SimpleNamespace
+            mcp_tool = SimpleNamespace(
                 name=tool_name,
                 description=tool_description,
                 input_schema=input_schema,
@@ -188,8 +190,9 @@ class AnnotatedDecorators:
             resource_name = name or func.__name__
             resource_description = description or func.__doc__ or f"Resource: {resource_name}"
             
-            # 创建 MCPResource
-            mcp_resource = MCPResource(
+            # 创建资源对象
+            from types import SimpleNamespace
+            mcp_resource = SimpleNamespace(
                 uri=uri,
                 name=resource_name,
                 description=resource_description,
