@@ -12,7 +12,7 @@ setup(
     description="一个强大且易用的 MCP (Model Context Protocol) 服务器开发框架",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    packages=find_packages(),
+    packages=find_packages(include=['mcp_framework', 'mcp_framework.*']),
     python_requires=">=3.8",
     install_requires=[
         "aiohttp>=3.8.0",

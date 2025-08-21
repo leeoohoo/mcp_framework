@@ -12,6 +12,9 @@ include *.yaml
 include *.yml
 include *.json
 
+# 包含所有 Python 模块文件
+recursive-include mcp_framework *.py
+
 # 包含 Web 资源
 recursive-include mcp_framework/web/templates *.html
 recursive-include mcp_framework/web/static *.css *.js *.png *.jpg *.gif *.ico
