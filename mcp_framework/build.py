@@ -133,14 +133,21 @@ class MCPServerBuilder:
                     if line and not line.startswith('#'):
                         all_requirements.add(line)
 
-        # 特定服务依赖
-        specific_requirements = self.project_root / f"{script_name}_requirements.txt"
-        if specific_requirements.exists():
-            with open(specific_requirements, 'r', encoding='utf-8') as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith('#'):
-                        all_requirements.add(line)
+        # 特定服务依赖 - 先在脚本同目录查找，再在项目根目录查找
+        script_dir = script_path.parent
+        specific_requirements_paths = [
+            script_dir / f"{script_name}_requirements.txt",  # 脚本同目录
+            self.project_root / f"{script_name}_requirements.txt"  # 项目根目录
+        ]
+        
+        for specific_requirements in specific_requirements_paths:
+            if specific_requirements.exists():
+                with open(specific_requirements, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#'):
+                            all_requirements.add(line)
+                break  # 找到一个就停止
 
         return all_requirements
 
@@ -227,6 +234,7 @@ class MCPServerBuilder:
                 pkg_name = req.split('==')[0].split('>=')[0].split('<=')[0].strip()
                 if pkg_name != "mcp-framework":  # 避免重复添加
                     cmd.extend(["--collect-all", pkg_name])
+                    cmd.extend(["--hidden-import", pkg_name])  # 额外添加hidden-import确保包含
             
             # 添加 MCP Framework 的完整收集
             cmd.extend(["--collect-all", "mcp_framework"])
@@ -243,6 +251,49 @@ class MCPServerBuilder:
             ]
             for imp in mcp_framework_imports:
                 cmd.extend(["--hidden-import", imp])
+            
+            # 🔥 新增：自动检测并添加本地模块
+            script_dir = script_path.parent.resolve()
+            local_imports = self.analyze_script_imports(script_path)
+            collected_modules = set()
+            
+            # 创建临时目录来存放本地模块
+            temp_modules_dir = self.build_dir / f"temp_modules_{script_name}"
+            temp_modules_dir.mkdir(parents=True, exist_ok=True)
+            
+            # 递归检测本地模块的依赖
+            def collect_local_dependencies(module_path: Path, collected: set):
+                if module_path.stem in collected:
+                    return
+                collected.add(module_path.stem)
+                
+                deps = self.analyze_script_imports(module_path)
+                for dep in deps:
+                    dep_path = (script_dir / f"{dep}.py").resolve()
+                    if dep_path.exists() and dep not in collected:
+                        print(f"   📦 Adding local dependency: {dep}")
+                        cmd.extend(["--hidden-import", dep])
+                        # 复制模块到临时目录
+                        temp_dep_path = temp_modules_dir / f"{dep}.py"
+                        shutil.copy2(dep_path, temp_dep_path)
+                        collect_local_dependencies(dep_path, collected)
+            
+            # 检测并添加本地模块
+            for imp in local_imports:
+                # 检查是否是本地模块（同目录下的.py文件）
+                local_module_path = (script_dir / f"{imp}.py").resolve()
+                if local_module_path.exists():
+                    print(f"   📦 Adding local module: {imp}")
+                    cmd.extend(["--hidden-import", imp])
+                    # 复制模块到临时目录
+                    temp_module_path = temp_modules_dir / f"{imp}.py"
+                    shutil.copy2(local_module_path, temp_module_path)
+                    # 递归收集依赖
+                    collect_local_dependencies(local_module_path, collected_modules)
+            
+            # 将临时目录添加到Python路径
+            if temp_modules_dir.exists() and any(temp_modules_dir.iterdir()):
+                cmd.extend(["--paths", str(temp_modules_dir)])
 
             cmd.append(str(script_path))
 
