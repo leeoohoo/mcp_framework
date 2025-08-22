@@ -264,7 +264,21 @@ def _setup_tools(self):
             required=False
         )]
     ):
-        """启用隐藏文件参数"""
+        """启用隐藏文件参数
+        
+        这个装饰器的作用：
+        1. 定义一个名为 'enable_hidden_files' 的服务器配置参数
+        2. 参数类型为布尔值（BooleanParam）
+        3. 在Web配置界面中显示为"启用隐藏文件"选项
+        4. 用户可以通过配置界面或配置文件设置此参数
+        5. 在工具函数中可通过 self.get_config_value("enable_hidden_files") 获取值
+        
+        参数说明：
+        - display_name: 在配置界面显示的友好名称
+        - description: 参数的详细说明
+        - default_value: 默认值（False表示默认不启用隐藏文件）
+        - required: 是否为必需参数（False表示可选）
+        """
         pass
 ```
 
@@ -281,9 +295,75 @@ def _setup_tools(self):
         # 获取配置值
         api_key = self.get_config_value("api_key")
         model_type = self.get_config_value("model_type", "gpt-3.5-turbo")
+        enable_hidden = self.get_config_value("enable_hidden_files", False)
         
         # 使用配置进行处理
-        return f"使用 {model_type} 处理查询: {query}"
+        result = f"使用 {model_type} 处理查询: {query}"
+        if enable_hidden:
+            result += " (包含隐藏文件)"
+        return result
+```
+
+#### 服务器参数装饰器详解
+
+服务器参数装饰器 `@self.decorators.server_param()` 是 MCP Framework 的核心功能之一，它允许你为服务器定义可配置的参数。
+
+**工作原理：**
+
+1. **参数定义阶段**：使用装饰器定义参数的元数据（名称、类型、默认值等）
+2. **配置收集阶段**：框架自动生成配置界面，用户可以设置参数值
+3. **运行时使用**：在工具函数中通过 `self.get_config_value()` 获取用户设置的值
+
+**完整示例：**
+
+```python
+# 1. 定义参数（在 _setup_tools 方法中）
+@self.decorators.server_param("enable_hidden_files")
+async def enable_hidden_files_param(
+    param: Annotated[bool, BooleanParam(
+        display_name="启用隐藏文件",
+        description="是否允许访问以点(.)开头的隐藏文件",
+        default_value=False,
+        required=False
+    )]
+):
+    """定义是否启用隐藏文件的配置参数"""
+    pass
+
+# 2. 在工具中使用参数
+@self.tool("列出文件")
+async def list_files(directory: Annotated[str, Required("目录路径")]):
+    # 获取用户配置的参数值
+    show_hidden = self.get_config_value("enable_hidden_files", False)
+    
+    files = []
+    for file in os.listdir(directory):
+        # 根据配置决定是否包含隐藏文件
+        if not show_hidden and file.startswith('.'):
+            continue
+        files.append(file)
+    
+    return {"files": files, "show_hidden": show_hidden}
+```
+
+**参数类型支持：**
+
+- `StringParam`: 字符串参数
+- `BooleanParam`: 布尔参数
+- `SelectParam`: 选择参数（下拉菜单）
+- `PathParam`: 路径参数
+- `ServerParam`: 通用参数（可指定类型）
+
+**配置文件生成：**
+
+框架会自动生成配置文件（如 `server_port_8080_config.json`），用户的设置会保存在其中：
+
+```json
+{
+  "enable_hidden_files": true,
+  "api_key": "your-api-key",
+  "model_type": "gpt-4"
+}
 ```
 
 ### 多端口配置
