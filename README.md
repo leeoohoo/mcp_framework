@@ -40,48 +40,63 @@ pip install -e .
 
 ```python
 #!/usr/bin/env python3
+import asyncio
 from mcp_framework import EnhancedMCPServer, run_server_main
 from mcp_framework.core.decorators import Required, Optional
 from typing import Annotated
 
-# 创建服务器实例
-server = EnhancedMCPServer(
-    name="MyMCPServer",
-    version="1.0.0",
-    description="我的第一个 MCP 服务器"
-)
 
-# 使用装饰器定义工具
-@server.tool("计算两个数的和")
-async def add_numbers(
-    a: Annotated[int, Required("第一个数字")],
-    b: Annotated[int, Required("第二个数字")]
-) -> int:
-    """计算两个数字的和"""
-    return a + b
+class MyMCPServer(EnhancedMCPServer):
+    """我的第一个 MCP 服务器"""
+    
+    def __init__(self):
+        super().__init__(
+            name="MyMCPServer",
+            version="1.0.0",
+            description="我的第一个 MCP 服务器"
+        )
+        self._setup_tools()
+    
+    async def initialize(self):
+        """初始化服务器"""
+        self.logger.info("MyMCPServer 初始化完成")
+    
+    def _setup_tools(self):
+        """设置工具和资源"""
+        
+        # 使用装饰器定义工具
+        @self.tool("计算两个数的和")
+        async def add_numbers(
+            a: Annotated[int, Required("第一个数字")],
+            b: Annotated[int, Required("第二个数字")]
+        ) -> int:
+            """计算两个数字的和"""
+            return a + b
+        
+        # 定义流式工具
+        @self.streaming_tool("生成数字序列")
+        async def generate_sequence(
+            start: Annotated[int, Required("起始数字")],
+            end: Annotated[int, Required("结束数字")]
+        ):
+            """生成数字序列"""
+            for i in range(start, end + 1):
+                yield f"数字: {i}"
+                await asyncio.sleep(0.1)  # 模拟处理时间
+        
+        # 定义资源
+        @self.resource(
+            uri="file://data.txt",
+            name="示例数据",
+            description="示例数据文件"
+        )
+        async def get_data():
+            return {"content": "这是示例数据", "type": "text/plain"}
 
-# 定义流式工具
-@server.streaming_tool("生成数字序列")
-async def generate_sequence(
-    start: Annotated[int, Required("起始数字")],
-    end: Annotated[int, Required("结束数字")]
-):
-    """生成数字序列"""
-    for i in range(start, end + 1):
-        yield f"数字: {i}"
-        await asyncio.sleep(0.1)  # 模拟处理时间
-
-# 定义资源
-@server.resource(
-    uri="file://data.txt",
-    name="示例数据",
-    description="示例数据文件"
-)
-async def get_data():
-    return {"content": "这是示例数据", "type": "text/plain"}
 
 # 启动服务器
 if __name__ == "__main__":
+    server = MyMCPServer()
     run_server_main(
         server_instance=server,
         server_name="MyMCPServer",
@@ -102,65 +117,79 @@ python my_server.py --port 8080 --host localhost
 #### 工具装饰器
 
 ```python
-# 基础工具
-@server.tool("工具描述")
-async def my_tool(param1: str, param2: int) -> str:
-    return f"处理结果: {param1} - {param2}"
-
-# 流式工具
-@server.streaming_tool("流式工具描述")
-async def my_streaming_tool(query: str):
-    for i in range(10):
-        yield f"处理步骤 {i}: {query}"
-        await asyncio.sleep(0.1)
+# 在 _setup_tools 方法中定义工具
+def _setup_tools(self):
+    # 基础工具
+    @self.tool("工具描述")
+    async def my_tool(param1: str, param2: int) -> str:
+        return f"处理结果: {param1} - {param2}"
+    
+    # 流式工具
+    @self.streaming_tool("流式工具描述")
+    async def my_streaming_tool(query: str):
+        for i in range(10):
+            yield f"处理步骤 {i}: {query}"
+            await asyncio.sleep(0.1)
 ```
 
 #### 参数类型注解
 
 ```python
-from mcp_framework.core.decorators import Required, Optional, Enum, IntRange
-from typing import Annotated
+from typing import List, Optional, AsyncGenerator
+from typing_extensions import Annotated
+from mcp_framework.core.decorators import (
+    Required as R,
+    Optional as O,
+    IntRange,
+    ServerParam,
+    StringParam,
+    BooleanParam,
+    PathParam
+)
 
-@server.tool("高级参数示例")
-async def advanced_params(
-    # 必填字符串参数
-    name: Annotated[str, Required("用户名称")],
+# 在 _setup_tools 方法中定义
+def _setup_tools(self):
+    # 流式工具参数示例
+    @self.streaming_tool(description="📖 **File Line Range Reader** - 流式读取文件指定行范围")
+    async def read_file_lines(
+        file_path: Annotated[str, R("文件路径（支持相对和绝对路径）")],
+        start_line: Annotated[int, IntRange("起始行号（1-based）", min_val=1)],
+        end_line: Annotated[int, IntRange("结束行号（1-based，包含）", min_val=1)]
+    ) -> AsyncGenerator[str, None]:
+        """流式读取文件指定行范围"""
+        # 实现代码...
+        yield "result"
     
-    # 可选参数带默认值
-    age: Annotated[int, Optional("年龄", default=18)],
-    
-    # 枚举参数
-    gender: Annotated[str, Enum("性别", ["male", "female", "other"])],
-    
-    # 范围参数
-    score: Annotated[int, IntRange("分数", min_val=0, max_val=100)],
-    
-    # 布尔参数
-    active: Annotated[bool, Required("是否激活")] = True
-) -> dict:
-    return {
-        "name": name,
-        "age": age,
-        "gender": gender,
-        "score": score,
-        "active": active
-    }
+    # 搜索工具参数示例
+    @self.tool(description="🔍 **Content Search** - 搜索文件内容")
+    async def search_files(
+        query_text: Annotated[str, R("搜索关键词")],
+        limit: Annotated[int, O("最大结果数量", default=50, minimum=1)] = 50,
+        case_sensitive: Annotated[bool, O("是否区分大小写", default=False)] = False,
+        file_extensions: Annotated[Optional[List[str]], O("文件扩展名列表，如 ['.py', '.js']")] = None
+    ) -> dict:
+        """搜索文件内容"""
+        return {"results": []}
 ```
 
 #### 资源装饰器
 
 ```python
-@server.resource(
-    uri="file://config.json",
-    name="配置文件",
-    description="服务器配置文件",
-    mime_type="application/json"
-)
-async def get_config():
-    return {
-        "content": json.dumps({"setting1": "value1"}),
-        "type": "application/json"
-    }
+import json
+
+# 在 _setup_tools 方法中定义
+def _setup_tools(self):
+    @self.resource(
+        uri="file://config.json",
+        name="配置文件",
+        description="服务器配置文件",
+        mime_type="application/json"
+    )
+    async def get_config():
+        return {
+            "content": json.dumps({"setting1": "value1"}),
+            "type": "application/json"
+        }
 ```
 
 ### 服务器配置
@@ -168,36 +197,93 @@ async def get_config():
 #### 配置参数定义
 
 ```python
-from mcp_framework.core.decorators import ServerParam, StringParam, SelectParam
+from mcp_framework.core.decorators import (
+    ServerParam,
+    StringParam,
+    SelectParam,
+    BooleanParam,
+    PathParam
+)
+from typing import Annotated
 
-@server.server_param("api_key")
-def api_key_param() -> Annotated[str, StringParam(
-    "API 密钥",
-    "用于访问外部服务的 API 密钥",
-    placeholder="请输入 API 密钥"
-)]:
-    pass
-
-@server.server_param("model_type")
-def model_param() -> Annotated[str, SelectParam(
-    "模型类型",
-    "选择要使用的 AI 模型",
-    options=["gpt-3.5-turbo", "gpt-4", "claude-3"]
-)]:
-    pass
+# 在 _setup_tools 方法中定义
+def _setup_tools(self):
+    @self.decorators.server_param("api_key")
+    async def api_key_param(
+        param: Annotated[str, StringParam(
+            display_name="API 密钥",
+            description="用于访问外部服务的 API 密钥",
+            placeholder="请输入 API 密钥"
+        )]
+    ):
+        """API 密钥参数"""
+        pass
+    
+    @self.decorators.server_param("model_type")
+    async def model_param(
+        param: Annotated[str, SelectParam(
+            display_name="模型类型",
+            description="选择要使用的 AI 模型",
+            options=["gpt-3.5-turbo", "gpt-4", "claude-3"]
+        )]
+    ):
+        """模型类型参数"""
+        pass
+    
+    @self.decorators.server_param("project_root")
+    async def project_root_param(
+        param: Annotated[str, PathParam(
+            display_name="项目根目录",
+            description="服务器操作的根目录路径，留空使用当前目录",
+            required=False,
+            placeholder="/path/to/project"
+        )]
+    ):
+        """项目根目录参数"""
+        pass
+    
+    @self.decorators.server_param("max_file_size")
+    async def max_file_size_param(
+        param: Annotated[int, ServerParam(
+            display_name="最大文件大小 (MB)",
+            description="允许读取的最大文件大小，单位MB",
+            param_type="integer",
+            default_value=10,
+            required=False
+        )]
+    ):
+        """最大文件大小参数"""
+        pass
+    
+    @self.decorators.server_param("enable_hidden_files")
+    async def enable_hidden_files_param(
+        param: Annotated[bool, BooleanParam(
+            display_name="启用隐藏文件",
+            description="是否允许访问以点(.)开头的隐藏文件",
+            default_value=False,
+            required=False
+        )]
+    ):
+        """启用隐藏文件参数"""
+        pass
 ```
 
 #### 配置使用
 
 ```python
-@server.tool("使用配置的工具")
-async def configured_tool(query: Annotated[str, Required("查询内容")]):
-    # 获取配置值
-    api_key = server.get_config_value("api_key")
-    model_type = server.get_config_value("model_type", "gpt-3.5-turbo")
-    
-    # 使用配置进行处理
-    return f"使用 {model_type} 处理查询: {query}"
+from mcp_framework.core.decorators import Required
+from typing import Annotated
+
+# 在 _setup_tools 方法中定义
+def _setup_tools(self):
+    @self.tool("使用配置的工具")
+    async def configured_tool(query: Annotated[str, Required("查询内容")]):
+        # 获取配置值
+        api_key = self.get_config_value("api_key")
+        model_type = self.get_config_value("model_type", "gpt-3.5-turbo")
+        
+        # 使用配置进行处理
+        return f"使用 {model_type} 处理查询: {query}"
 ```
 
 ### 多端口配置
@@ -301,10 +387,15 @@ project/
 框架提供内置的 Web 管理界面：
 
 ```python
+from mcp_framework import EnhancedMCPServer
 from mcp_framework.web import setup_web_interface
 
-# 启用 Web 界面
-setup_web_interface(server, port=8080)
+# 在服务器类中启用 Web 界面
+class MyMCPServer(EnhancedMCPServer):
+    def __init__(self):
+        super().__init__(name="MyServer", version="1.0.0")
+        # 启用 Web 界面
+        setup_web_interface(self, port=8080)
 ```
 
 访问 `http://localhost:8080/config` 进行配置管理。
@@ -314,31 +405,42 @@ setup_web_interface(server, port=8080)
 ### 自定义服务器类
 
 ```python
-from mcp_framework import BaseMCPServer
+from mcp_framework import EnhancedMCPServer
 
-class CustomMCPServer(BaseMCPServer):
+class CustomMCPServer(EnhancedMCPServer):
     def __init__(self):
-        super().__init__("CustomServer", "1.0.0")
+        super().__init__(
+            name="CustomServer", 
+            version="1.0.0",
+            description="自定义 MCP 服务器"
+        )
+        self._setup_tools()
         
     async def initialize(self):
         # 自定义初始化逻辑
-        self.custom_data = await self.load_custom_data()
-        
-    async def handle_tool_call(self, tool_name: str, arguments: dict):
-        # 自定义工具调用处理
-        if tool_name == "custom_tool":
-            return await self.handle_custom_tool(arguments)
-        return await super().handle_tool_call(tool_name, arguments)
+        self.logger.info("CustomMCPServer 初始化完成")
+    
+    def _setup_tools(self):
+        """设置自定义工具"""
+        @self.tool("自定义工具")
+        async def custom_tool(message: str) -> dict:
+            """处理自定义工具调用"""
+            return {"result": "custom tool executed", "message": message}
 ```
 
 ### 中间件支持
 
 ```python
+from mcp_framework import EnhancedMCPServer
 from mcp_framework.server.middleware import LoggingMiddleware, AuthMiddleware
 
-# 添加中间件
-server.add_middleware(LoggingMiddleware())
-server.add_middleware(AuthMiddleware(api_key="your-api-key"))
+# 在服务器类中添加中间件
+class MyMCPServer(EnhancedMCPServer):
+    def __init__(self):
+        super().__init__(name="MyServer", version="1.0.0")
+        # 添加中间件
+        self.add_middleware(LoggingMiddleware())
+        self.add_middleware(AuthMiddleware(api_key="your-api-key"))
 ```
 
 ## 📖 示例项目
