@@ -693,6 +693,7 @@ class EnhancedMCPServer(BaseMCPServer):
         """工具装饰器"""
         return self.decorators.tool
 
+
     @property
     def streaming_tool(self):
         """流式工具装饰器"""
