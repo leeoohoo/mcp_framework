@@ -482,46 +482,139 @@ class MyMCPServer(EnhancedMCPServer):
 
 ## 🔧 高级用法
 
-### 自定义服务器类
-
-```python
-from mcp_framework import EnhancedMCPServer
-
-class CustomMCPServer(EnhancedMCPServer):
-    def __init__(self):
-        super().__init__(
-            name="CustomServer", 
-            version="1.0.0",
-            description="自定义 MCP 服务器"
-        )
-        self._setup_tools()
-        
-    async def initialize(self):
-        # 自定义初始化逻辑
-        self.logger.info("CustomMCPServer 初始化完成")
-    
-    def _setup_tools(self):
-        """设置自定义工具"""
-        @self.tool("自定义工具")
-        async def custom_tool(message: str) -> dict:
-            """处理自定义工具调用"""
-            return {"result": "custom tool executed", "message": message}
-```
 
 ### 中间件支持
 
-```python
-from mcp_framework import EnhancedMCPServer
-from mcp_framework.server.middleware import LoggingMiddleware, AuthMiddleware
+框架提供了强大的中间件系统，用于处理HTTP请求的预处理和后处理。中间件在请求到达具体处理函数之前或响应返回给客户端之前执行特定的逻辑。
 
-# 在服务器类中添加中间件
+#### 内置中间件
+
+框架自动集成了以下核心中间件：
+
+```python
+from mcp_framework.server.middleware import (
+    cors_middleware,
+    error_middleware, 
+    logging_middleware
+)
+```
+
+**1. CORS 中间件 (`cors_middleware`)**
+- **功能**: 处理跨域资源共享
+- **用途**: 允许Web界面从不同域名访问MCP服务器
+- **自动配置**: 支持所有常见的HTTP方法和头部
+
+**2. 错误处理中间件 (`error_middleware`)**
+- **功能**: 统一处理和格式化错误响应
+- **用途**: 捕获异常，记录日志，返回标准化的JSON错误格式
+- **安全性**: 避免敏感信息泄露
+
+**3. 日志中间件 (`logging_middleware`)**
+- **功能**: 记录HTTP请求的访问日志
+- **监控**: 记录请求方法、路径、响应状态码和处理时间
+- **调试**: 便于问题排查和性能分析
+
+#### 中间件工作流程
+
+```
+请求 → CORS中间件 → 错误处理中间件 → 日志中间件 → 路由处理 → 响应
+```
+
+#### 自定义中间件示例
+
+虽然框架主要在HTTP服务器层面提供中间件支持，但你可以创建自定义中间件来扩展功能：
+
+```python
+from aiohttp import web
+import time
+
+@web.middleware
+async def timing_middleware(request, handler):
+    """请求计时中间件"""
+    start_time = time.time()
+    response = await handler(request)
+    duration = time.time() - start_time
+    response.headers['X-Response-Time'] = f"{duration:.3f}s"
+    return response
+
+@web.middleware
+async def auth_middleware(request, handler):
+    """简单的API密钥认证中间件"""
+    # 跳过某些公开路径
+    if request.path in ['/health', '/info']:
+        return await handler(request)
+    
+    # 检查API密钥
+    api_key = request.headers.get('X-API-Key')
+    if not api_key or api_key != 'your-secret-key':
+        return web.json_response(
+            {'error': 'Unauthorized'}, 
+            status=401
+        )
+    
+    return await handler(request)
+
+# 注意：当前框架版本中，自定义中间件需要在HTTP服务器层面添加
+# 未来版本可能会提供更简便的中间件注册方式
+```
+
+#### 中间件应用场景
+
+**1. 安全控制**
+- API密钥验证
+- 请求频率限制
+- IP白名单/黑名单
+
+**2. 监控和调试**
+- 请求响应时间统计
+- 错误率监控
+- 访问日志记录
+
+**3. 数据处理**
+- 请求数据预处理
+- 响应数据格式化
+- 内容压缩
+
+**4. 缓存优化**
+- 响应缓存
+- 静态资源缓存
+- 数据库查询缓存
+
+#### 配置示例
+
+```python
+from mcp_framework import EnhancedMCPServer, run_server_main
+
 class MyMCPServer(EnhancedMCPServer):
     def __init__(self):
-        super().__init__(name="MyServer", version="1.0.0")
-        # 添加中间件
-        self.add_middleware(LoggingMiddleware())
-        self.add_middleware(AuthMiddleware(api_key="your-api-key"))
+        super().__init__(
+            name="MyServer", 
+            version="1.0.0",
+            description="支持中间件的MCP服务器"
+        )
+        self._setup_tools()
+    
+    async def initialize(self):
+        """服务器初始化"""
+        self.logger.info("服务器启动，中间件已自动配置")
+        self.logger.info("CORS、错误处理、日志中间件已启用")
+    
+    def _setup_tools(self):
+        @self.tool("测试工具")
+        async def test_tool(message: str) -> str:
+            """测试中间件功能的工具"""
+            return f"处理消息: {message}"
+
+if __name__ == "__main__":
+    server = MyMCPServer()
+    run_server_main(
+        server_instance=server,
+        server_name="MyServer",
+        default_port=8080
+    )
 ```
+
+通过访问 `http://localhost:8080/health` 可以看到中间件的工作效果，包括CORS头部、访问日志和错误处理。
 
 ## 📖 示例项目
 
