@@ -383,6 +383,17 @@ class SSEHandler:
 
     async def handle_sse_tool_call(self, request):
         """处理 SSE 工具调用请求"""
+        # 先创建 SSE 响应，确保所有错误都能通过 SSE 事件返回
+        response = web.StreamResponse()
+        response.headers['Content-Type'] = 'text/event-stream'
+        response.headers['Cache-Control'] = 'no-cache'
+        response.headers['Connection'] = 'keep-alive'
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Headers'] = 'Cache-Control'
+        
+        await response.prepare(request)
+        
+        session_id = None
         try:
             # 获取查询参数或 POST 数据
             if request.method == 'POST':
@@ -429,22 +440,13 @@ class SSEHandler:
                 self.logger.info(f"After coercion: {arguments}")
             except Exception as e:
                 self.logger.warning(f"Failed to coerce arguments for tool '{tool_name}': {e}")
-                raise ValueError(f"Tool '{tool_name}' parameter '{e}'")
+                raise ValueError(f"Tool '{tool_name}' missing required parameter: {str(e).split(': ')[-1] if ': ' in str(e) else str(e)}")
 
             # 创建流式会话
             session_id = self.mcp_server.start_streaming_session()
-
-            # 创建 SSE 响应
-            response = web.StreamResponse()
-            response.headers['Content-Type'] = 'text/event-stream'
-            response.headers['Cache-Control'] = 'no-cache'
-            response.headers['Connection'] = 'keep-alive'
-            response.headers['Access-Control-Allow-Origin'] = '*'
-            response.headers['Access-Control-Allow-Headers'] = 'Cache-Control'
+            
             # 添加会话ID到响应头
             response.headers['X-Session-ID'] = session_id
-
-            await response.prepare(request)
 
             # 发送开始事件，包含会话ID
             if not await self._send_sse_event(response, 'start', {
@@ -500,13 +502,17 @@ class SSEHandler:
 
         except Exception as e:
             self.logger.error(f"SSE tool call error: {str(e)}")
-            # 对于初始化错误，返回普通 HTTP 错误响应
-            return web.json_response({
-                'error': {
-                    'code': 'SSE_ERROR',
-                    'message': str(e)
-                }
-            }, status=400)
+            # 通过 SSE 事件发送错误信息，而不是返回 JSON 响应
+            await self._send_sse_event(response, 'error', {
+                'error': str(e),
+                'code': 'SSE_INIT_ERROR',
+                'session_id': session_id
+            })
+            # 清理会话（如果已创建）
+            if session_id:
+                self.mcp_server.cleanup_streaming_session(session_id)
+        
+        return response
 
     async def _send_sse_event(self, response, event_type: str, data: dict):
         """发送 SSE 事件"""
