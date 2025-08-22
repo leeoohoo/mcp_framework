@@ -775,7 +775,6 @@ class APIHandler:
 
 class ServerConfigHandler:
     """服务器配置处理器"""
-
     def __init__(self, mcp_server: BaseMCPServer):
         self.mcp_server = mcp_server
         self.logger = logging.getLogger(f"{__name__}.ServerConfigHandler")
