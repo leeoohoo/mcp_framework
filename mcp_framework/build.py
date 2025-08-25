@@ -95,12 +95,42 @@ class MCPServerBuilder:
                 dir_path = self.project_root / dir_path
 
             if dir_path.exists():
-                shutil.rmtree(dir_path)
-                print(f"   Removed: {dir_path}")
+                try:
+                    shutil.rmtree(dir_path)
+                    print(f"   Removed: {dir_path}")
+                except OSError as e:
+                    if "Device or resource busy" in str(e) or e.errno == 16 or "Permission denied" in str(e) or e.errno == 13:
+                        # 在 Docker 环境中，挂载的目录无法删除或权限不足，只清理内容
+                        print(f"   Clearing contents of mounted directory: {dir_path}")
+                        for item in dir_path.iterdir():
+                            try:
+                                if item.is_dir():
+                                    shutil.rmtree(item)
+                                else:
+                                    item.unlink()
+                            except OSError as perm_error:
+                                # 如果是权限问题，尝试修改权限后再删除
+                                if "Permission denied" in str(perm_error) or perm_error.errno == 13:
+                                    try:
+                                        import stat
+                                        item.chmod(stat.S_IWRITE | stat.S_IREAD)
+                                        if item.is_dir():
+                                            shutil.rmtree(item)
+                                        else:
+                                            item.unlink()
+                                    except OSError:
+                                        pass  # 最终忽略无法删除的文件
+                                else:
+                                    pass  # 忽略其他错误
+                    else:
+                        print(f"   Warning: Could not remove {dir_path}: {e}")
 
         # 清理 .pyc 文件
         for pyc_file in self.project_root.rglob("*.pyc"):
-            pyc_file.unlink()
+            try:
+                pyc_file.unlink()
+            except OSError:
+                pass  # 忽略无法删除的 .pyc 文件
 
         print("✅ Clean completed")
 
@@ -226,7 +256,6 @@ class MCPServerBuilder:
             # 构建命令
             cmd = [str(venv_pyinstaller)]
             cmd.extend([
-                "--clean",
                 "--name", config['name'],
                 "--console",
                 "--distpath", str(self.dist_dir),
@@ -234,6 +263,10 @@ class MCPServerBuilder:
                 "--specpath", str(self.build_dir / f"spec_{script_name}"),
                 "--noconfirm"
             ])
+            
+            # 在非Docker环境中添加--clean参数，Docker环境中跳过以避免权限问题
+            if not os.environ.get('DOCKER_ENV'):
+                cmd.insert(1, "--clean")
 
             if onefile:
                 cmd.append("--onefile")
@@ -546,6 +579,7 @@ def build_docker_platform(target_platform, args):
         image_name = f"mcp-server-builder-{target_platform}"
         build_cmd = [
             "docker", "build", 
+            "--no-cache",  # 强制重新构建，确保使用最新代码
             "-f", str(dockerfile_path),
             "-t", image_name,
             "."
@@ -562,25 +596,27 @@ def build_docker_platform(target_platform, args):
             dist_dir = current_dir / "dist"
         dist_dir.mkdir(parents=True, exist_ok=True)
         
+        # 构建Docker运行命令，先准备mcp-build的参数
+        mcp_build_args = []
+        if args.server:
+            mcp_build_args.extend(["--server", args.server])
+        if args.output_dir:
+            mcp_build_args.extend(["--output-dir", "/app/output"])  # 使用新的挂载点
+        if args.no_test:
+            mcp_build_args.append("--no-test")
+        # Docker环境中默认禁用清理，避免权限问题
+        if args.no_clean or True:  # 在Docker中总是禁用清理
+            mcp_build_args.append("--no-clean")
+        if args.include_source:
+            mcp_build_args.append("--include-source")
+        
         run_cmd = [
             "docker", "run", "--rm",
-            "-v", f"{dist_dir}:/app/dist",
+            "-v", f"{dist_dir}:/app/output",  # 使用不同的挂载点避免冲突
             "-v", f"{current_dir}:/app/src",
             "-w", "/app/src",  # 设置工作目录为源代码目录
             image_name
-        ]
-        
-        # 添加构建参数
-        if args.server:
-            run_cmd.extend(["--server", args.server])
-        if args.output_dir:
-            run_cmd.extend(["--output-dir", "/app/dist"])  # 容器内的输出目录
-        if args.no_test:
-            run_cmd.append("--no-test")
-        if args.no_clean:
-            run_cmd.append("--no-clean")
-        if args.include_source:
-            run_cmd.append("--include-source")
+        ] + mcp_build_args
         
         print("   Running build in container...")
         subprocess.run(run_cmd, check=True, cwd=current_dir)
@@ -599,24 +635,21 @@ def build_docker_platform(target_platform, args):
 def get_dockerfile_content(platform):
     """获取指定平台的 Dockerfile 内容"""
     if platform == "linux":
-        return '''FROM python:3.11-slim
+        return '''FROM python:3.11-alpine
 
 # 安装系统依赖
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache gcc musl-dev g++ linux-headers
 
 # 设置工作目录
 WORKDIR /app
 
-# 复制源代码
-COPY . /app/src/
+# 设置Docker环境变量，用于跳过PyInstaller的--clean参数
+ENV DOCKER_ENV=1
 
-# 安装 mcp-framework 包
-RUN pip install --no-cache-dir mcp-framework
+# 安装最新的 mcp-framework
+RUN pip install --no-cache-dir --upgrade mcp-framework
 
-# 设置入口点使用 mcp-build 命令
+# 设置入口点
 ENTRYPOINT ["mcp-build"]
 '''
     elif platform == "windows":
@@ -625,13 +658,10 @@ ENTRYPOINT ["mcp-build"]
 # 设置工作目录
 WORKDIR C:\\app
 
-# 复制源代码
-COPY . C:\\app\\src\\
-
-# 安装 mcp-framework 包
+# 安装 mcp-framework
 RUN pip install --no-cache-dir mcp-framework
 
-# 设置入口点使用 mcp-build 命令
+# 设置入口点
 ENTRYPOINT ["mcp-build"]
 '''
     else:
@@ -672,9 +702,15 @@ def run_cross_platform_build(args):
             print(f"Building for {platform_name}...")
             print(f"{'='*50}")
             
-            if platform_name == "macos":
-                # macOS 构建使用本地构建（因为 Docker 中的 macOS 构建比较复杂）
-                if platform_module.system().lower() == "darwin":
+            if platform_name in ["macos", "linux"]:
+                # macOS 和 Linux 构建使用本地构建
+                if platform_name == "macos" and platform_module.system().lower() != "darwin":
+                    print(f"⚠️  macOS build skipped (not running on macOS)")
+                    print(f"   macOS builds can only be performed on macOS systems")
+                elif platform_name == "linux" and platform_module.system().lower() not in ["linux", "darwin"]:
+                    print(f"⚠️  Linux build skipped (not running on Linux/macOS)")
+                    print(f"   Linux builds can be performed on Linux or macOS systems")
+                else:
                     builder = MCPServerBuilder(server_script=args.server, output_dir=args.output_dir)
                     if builder.build_all(
                         clean=not args.no_clean,
@@ -686,10 +722,8 @@ def run_cross_platform_build(args):
                         success_count += 1
                     else:
                         print(f"❌ {platform_name} build failed")
-                else:
-                    print(f"⚠️  macOS build skipped (not running on macOS)")
-                    print(f"   macOS builds can only be performed on macOS systems")
             else:
+                # Windows 仍使用 Docker 构建
                 if build_docker_platform(platform_name, args):
                     print(f"✅ {platform_name} build successful")
                     success_count += 1
@@ -702,9 +736,17 @@ def run_cross_platform_build(args):
         
         return success_count == len(platforms)
     else:
-        if args.platform == "macos":
-            # macOS 构建使用本地构建
-            if platform_module.system().lower() == "darwin":
+        if args.platform in ["macos", "linux"]:
+            # macOS 和 Linux 构建使用本地构建
+            if args.platform == "macos" and platform_module.system().lower() != "darwin":
+                print("❌ macOS builds can only be performed on macOS systems")
+                print("   Please use a macOS machine or GitHub Actions with macos runners")
+                return False
+            elif args.platform == "linux" and platform_module.system().lower() not in ["linux", "darwin"]:
+                print("❌ Linux builds can be performed on Linux or macOS systems")
+                print("   Please use a Linux/macOS machine or GitHub Actions with ubuntu runners")
+                return False
+            else:
                 builder = MCPServerBuilder(server_script=args.server)
                 return builder.build_all(
                     clean=not args.no_clean,
@@ -712,11 +754,8 @@ def run_cross_platform_build(args):
                     onefile=not args.no_onefile,
                     include_source=args.include_source
                 )
-            else:
-                print("❌ macOS builds can only be performed on macOS systems")
-                print("   Please use a macOS machine or GitHub Actions with macos runners")
-                return False
         else:
+            # Windows 仍使用 Docker 构建
             return build_docker_platform(args.platform, args)
 
 
