@@ -7,13 +7,43 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      build_platform:
+        description: 'Platform to build for (native, linux, windows, all)'
+        required: false
+        default: 'native'
+        type: choice
+        options:
+        - native
+        - linux
+        - windows
+        - all
 
 jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ['3.11']
+        include:
+          # Linux x86_64
+          - os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+            python-version: '3.11'
+          # Windows x86_64
+          - os: windows-latest
+            platform: windows
+            arch: x86_64
+            python-version: '3.11'
+          # macOS Intel x86_64
+          - os: macos-13
+            platform: macos
+            arch: x86_64
+            python-version: '3.11'
+          # macOS Apple Silicon ARM64 (M1/M2)
+          - os: macos-latest
+            platform: macos
+            arch: arm64
+            python-version: '3.11'
     
     runs-on: ${{ matrix.os }}
     
@@ -29,7 +59,6 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller
         pip install -r requirements.txt
     
     - name: Install MCP Framework in development mode
@@ -40,20 +69,36 @@ jobs:
       run: |
         python test_package.py
     
-    - name: Build executables
+    - name: Create test server for building
       run: |
-        python mcp_framework/build.py --no-test
+        echo 'import asyncio' > test_build_server.py
+        echo 'from mcp_framework import MCPServer' >> test_build_server.py
+        echo '' >> test_build_server.py
+        echo 'class TestServer(MCPServer):' >> test_build_server.py
+        echo '    def __init__(self):' >> test_build_server.py
+        echo '        super().__init__("test-server", "1.0.0")' >> test_build_server.py
+        echo '' >> test_build_server.py
+        echo 'def main():' >> test_build_server.py
+        echo '    server = TestServer()' >> test_build_server.py
+        echo '    server.run()' >> test_build_server.py
+        echo '' >> test_build_server.py
+        echo 'if __name__ == "__main__":' >> test_build_server.py
+        echo '    main()' >> test_build_server.py
+    
+    - name: Build executables using mcp-build
+      run: |
+        mcp-build --platform native --server test_build_server.py --no-test
     
     - name: Upload artifacts
       uses: actions/upload-artifact@v3
       with:
-        name: mcp-framework-${{ matrix.os }}
+        name: mcp-framework-${{ matrix.platform }}-${{ matrix.arch }}
         path: dist/
         retention-days: 30
     
     - name: List built files
       run: |
-        echo "Built files:"
+        echo "Built files for ${{ matrix.platform }}-${{ matrix.arch }}:"
         ls -la dist/
   
   release:
@@ -69,11 +114,23 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          mcp-framework-ubuntu-latest/**/*
-          mcp-framework-windows-latest/**/*
-          mcp-framework-macos-latest/**/*
+          mcp-framework-linux-x86_64/**/*
+          mcp-framework-windows-x86_64/**/*
+          mcp-framework-macos-x86_64/**/*
+          mcp-framework-macos-arm64/**/*
         draft: false
         prerelease: false
+        body: |
+          ## MCP Framework Release
+          
+          This release includes cross-platform builds for:
+          - Linux x86_64
+          - Windows x86_64  
+          - macOS Intel (x86_64)
+          - macOS Apple Silicon (ARM64/M1/M2)
+          
+          ### Usage
+          Download the appropriate build for your platform and extract the archive.
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -88,18 +145,38 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
     
-    - name: Build Linux Docker image
+    - name: Install MCP Framework
       run: |
-        docker build -f Dockerfile.linux -t mcp-framework-linux .
+        python -m pip install --upgrade pip
+        pip install -e .
     
-    - name: Test Docker build
+    - name: Create test server for Docker build
       run: |
-        mkdir -p dist
-        docker run --rm -v $(pwd)/dist:/app/dist mcp-framework-linux --no-test
+        echo 'import asyncio' > test_docker_server.py
+        echo 'from mcp_framework import MCPServer' >> test_docker_server.py
+        echo '' >> test_docker_server.py
+        echo 'class TestDockerServer(MCPServer):' >> test_docker_server.py
+        echo '    def __init__(self):' >> test_docker_server.py
+        echo '        super().__init__("test-docker-server", "1.0.0")' >> test_docker_server.py
+        echo '' >> test_docker_server.py
+        echo 'def main():' >> test_docker_server.py
+        echo '    server = TestDockerServer()' >> test_docker_server.py
+        echo '    server.run()' >> test_docker_server.py
+        echo '' >> test_docker_server.py
+        echo 'if __name__ == "__main__":' >> test_docker_server.py
+        echo '    main()' >> test_docker_server.py
+    
+    - name: Test Docker cross-platform build (Linux)
+      run: |
+        mcp-build --platform linux --server test_docker_server.py --no-test
+    
+    - name: Test Docker cross-platform build (Windows)
+      run: |
+        mcp-build --platform windows --server test_docker_server.py --no-test
     
     - name: Upload Docker build artifacts
       uses: actions/upload-artifact@v3
       with:
-        name: mcp-framework-docker-linux
+        name: mcp-framework-docker-cross-platform
         path: dist/
         retention-days: 30

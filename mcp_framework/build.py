@@ -626,7 +626,7 @@ def run_cross_platform_build(args):
         return False
     
     if args.platform == "all":
-        platforms = ["linux", "windows"]
+        platforms = ["linux", "windows", "macos"]
         success_count = 0
         
         for platform in platforms:
@@ -634,11 +634,30 @@ def run_cross_platform_build(args):
             print(f"Building for {platform}...")
             print(f"{'='*50}")
             
-            if build_docker_platform(platform, args):
-                print(f"✅ {platform} build successful")
-                success_count += 1
+            if platform == "macos":
+                # macOS 构建使用本地构建（因为 Docker 中的 macOS 构建比较复杂）
+                import platform as platform_module
+                if platform_module.system().lower() == "darwin":
+                    builder = MCPServerBuilder(server_script=args.server)
+                    if builder.build_all(
+                        clean=not args.no_clean,
+                        test=not args.no_test,
+                        onefile=not args.no_onefile,
+                        include_source=args.include_source
+                    ):
+                        print(f"✅ {platform} build successful")
+                        success_count += 1
+                    else:
+                        print(f"❌ {platform} build failed")
+                else:
+                    print(f"⚠️  macOS build skipped (not running on macOS)")
+                    print(f"   macOS builds can only be performed on macOS systems")
             else:
-                print(f"❌ {platform} build failed")
+                if build_docker_platform(platform, args):
+                    print(f"✅ {platform} build successful")
+                    success_count += 1
+                else:
+                    print(f"❌ {platform} build failed")
         
         print(f"\n{'='*50}")
         print(f"Build Summary: {success_count}/{len(platforms)} platforms successful")
@@ -646,7 +665,23 @@ def run_cross_platform_build(args):
         
         return success_count == len(platforms)
     else:
-        return build_docker_platform(args.platform, args)
+        if args.platform == "macos":
+            # macOS 构建使用本地构建
+            import platform as platform_module
+            if platform_module.system().lower() == "darwin":
+                builder = MCPServerBuilder(server_script=args.server)
+                return builder.build_all(
+                    clean=not args.no_clean,
+                    test=not args.no_test,
+                    onefile=not args.no_onefile,
+                    include_source=args.include_source
+                )
+            else:
+                print("❌ macOS builds can only be performed on macOS systems")
+                print("   Please use a macOS machine or GitHub Actions with macos runners")
+                return False
+        else:
+            return build_docker_platform(args.platform, args)
 
 
 def main():
@@ -654,7 +689,7 @@ def main():
     parser = argparse.ArgumentParser(description="MCP Server Build Script")
     parser.add_argument("--server", "-s", help="Specific server script to build")
     parser.add_argument("--platform", "-p", 
-                       choices=["native", "linux", "windows", "all"],
+                       choices=["native", "linux", "windows", "macos", "all"],
                        default="native",
                        help="Target platform to build for (requires Docker for cross-platform)")
     parser.add_argument("--no-clean", action="store_true", help="Skip cleaning")
