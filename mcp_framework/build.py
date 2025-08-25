@@ -500,18 +500,187 @@ cd "$(dirname "$0")"
         return True
 
 
+def check_docker():
+    """检查 Docker 是否可用"""
+    try:
+        subprocess.run(["docker", "--version"], 
+                     check=True, capture_output=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+
+def build_docker_platform(target_platform, args):
+    """使用 Docker 构建指定平台"""
+    print(f"🐳 Building for {target_platform} using Docker...")
+    
+    current_dir = Path.cwd()
+    
+    # 创建临时 Dockerfile
+    dockerfile_content = get_dockerfile_content(target_platform)
+    dockerfile_path = current_dir / f"Dockerfile.{target_platform}"
+    
+    try:
+        # 写入 Dockerfile
+        with open(dockerfile_path, 'w', encoding='utf-8') as f:
+            f.write(dockerfile_content)
+        
+        # 构建 Docker 镜像
+        image_name = f"mcp-server-builder-{target_platform}"
+        build_cmd = [
+            "docker", "build", 
+            "-f", str(dockerfile_path),
+            "-t", image_name,
+            "."
+        ]
+        
+        print("   Building Docker image...")
+        subprocess.run(build_cmd, check=True, cwd=current_dir)
+        
+        # 运行构建容器
+        dist_dir = current_dir / "dist"
+        dist_dir.mkdir(exist_ok=True)
+        
+        run_cmd = [
+            "docker", "run", "--rm",
+            "-v", f"{dist_dir}:/app/dist",
+            "-v", f"{current_dir}:/app/src",
+            "-w", "/app/src",  # 设置工作目录为源代码目录
+            image_name
+        ]
+        
+        # 添加构建参数
+        if args.server:
+            run_cmd.extend(["--server", args.server])
+        if args.no_test:
+            run_cmd.append("--no-test")
+        if args.no_clean:
+            run_cmd.append("--no-clean")
+        if args.include_source:
+            run_cmd.append("--include-source")
+        
+        print("   Running build in container...")
+        subprocess.run(run_cmd, check=True, cwd=current_dir)
+        
+        return True
+        
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Docker build failed: {e}")
+        return False
+    finally:
+        # 清理临时 Dockerfile
+        if dockerfile_path.exists():
+            dockerfile_path.unlink()
+
+
+def get_dockerfile_content(platform):
+    """获取指定平台的 Dockerfile 内容"""
+    if platform == "linux":
+        return '''FROM python:3.11-slim
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制源代码
+COPY . /app/src/
+
+# 安装 mcp-framework 包
+RUN pip install --no-cache-dir mcp-framework
+
+# 设置入口点使用 mcp-build 命令
+ENTRYPOINT ["mcp-build"]
+'''
+    elif platform == "windows":
+        return '''FROM python:3.11-windowsservercore
+
+# 设置工作目录
+WORKDIR C:\\app
+
+# 复制源代码
+COPY . C:\\app\\src\\
+
+# 安装 mcp-framework 包
+RUN pip install --no-cache-dir mcp-framework
+
+# 设置入口点使用 mcp-build 命令
+ENTRYPOINT ["mcp-build"]
+'''
+    else:
+        raise ValueError(f"Unsupported platform: {platform}")
+
+
+def run_cross_platform_build(args):
+    """运行跨平台构建"""
+    print(f"🌍 Running cross-platform build for {args.platform}...")
+    
+    # 检查 Docker 可用性
+    if not check_docker():
+        print("❌ Docker is required for cross-platform builds")
+        print("   Please install Docker and try again.")
+        return False
+    
+    if args.platform == "all":
+        platforms = ["linux", "windows"]
+        success_count = 0
+        
+        for platform in platforms:
+            print(f"\n{'='*50}")
+            print(f"Building for {platform}...")
+            print(f"{'='*50}")
+            
+            if build_docker_platform(platform, args):
+                print(f"✅ {platform} build successful")
+                success_count += 1
+            else:
+                print(f"❌ {platform} build failed")
+        
+        print(f"\n{'='*50}")
+        print(f"Build Summary: {success_count}/{len(platforms)} platforms successful")
+        print(f"{'='*50}")
+        
+        return success_count == len(platforms)
+    else:
+        return build_docker_platform(args.platform, args)
+
+
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description="MCP Server Build Script")
     parser.add_argument("--server", "-s", help="Specific server script to build")
+    parser.add_argument("--platform", "-p", 
+                       choices=["native", "linux", "windows", "all"],
+                       default="native",
+                       help="Target platform to build for (requires Docker for cross-platform)")
     parser.add_argument("--no-clean", action="store_true", help="Skip cleaning")
     parser.add_argument("--no-test", action="store_true", help="Skip tests")
     parser.add_argument("--no-onefile", action="store_true", help="Build as directory")
     parser.add_argument("--include-source", action="store_true", help="Include source")
     parser.add_argument("--clean-only", action="store_true", help="Only clean")
     parser.add_argument("--list", "-l", action="store_true", help="List servers")
+    parser.add_argument("--check-docker", action="store_true", help="Check if Docker is available")
 
     args = parser.parse_args()
+    
+    # 检查 Docker 可用性
+    if args.check_docker:
+        if check_docker():
+            print("✅ Docker is available")
+        else:
+            print("❌ Docker is not available")
+        return
+    
+    # 如果是跨平台构建，调用跨平台构建脚本
+    if args.platform != "native":
+        success = run_cross_platform_build(args)
+        sys.exit(0 if success else 1)
+    
+    # 原有的本地构建逻辑
     builder = MCPServerBuilder(server_script=args.server)
 
     if args.list:
