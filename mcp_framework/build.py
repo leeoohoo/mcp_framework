@@ -24,9 +24,13 @@ from typing import List, Dict, Any, Set
 class MCPServerBuilder:
     """MCP 服务器构建器"""
 
-    def __init__(self, server_script=None):
+    def __init__(self, server_script=None, output_dir=None):
         self.project_root = Path.cwd()
-        self.dist_dir = self.project_root / "dist"
+        # 支持自定义输出目录
+        if output_dir:
+            self.dist_dir = Path(output_dir).resolve()
+        else:
+            self.dist_dir = self.project_root / "dist"
         self.build_dir = self.project_root / "build"
         self.platform_name = self.get_platform_name()
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -334,9 +338,16 @@ class MCPServerBuilder:
                     f.write(f"{req}\n")
 
             try:
-                # 升级 pip
-                subprocess.run([str(venv_pip), "install", "--upgrade", "pip"],
-                               check=True, capture_output=True)
+                # 升级 pip - Windows 平台使用更稳定的方式
+                if platform.system() == "Windows":
+                    # Windows 平台使用 python -m pip 并允许失败
+                    result = subprocess.run([str(venv_pip).replace("pip.exe", "python.exe"), "-m", "pip", "install", "--upgrade", "pip", "--no-warn-script-location"],
+                                           capture_output=True, text=True)
+                    if result.returncode != 0:
+                        print(f"   ⚠️  pip upgrade skipped on Windows: {result.stderr}")
+                else:
+                    subprocess.run([str(venv_pip), "install", "--upgrade", "pip"],
+                                   check=True, capture_output=True)
 
                 # 安装依赖
                 subprocess.run([str(venv_pip), "install", "-r", str(temp_req)],
@@ -544,8 +555,12 @@ def build_docker_platform(target_platform, args):
         subprocess.run(build_cmd, check=True, cwd=current_dir)
         
         # 运行构建容器
-        dist_dir = current_dir / "dist"
-        dist_dir.mkdir(exist_ok=True)
+        # 支持自定义输出目录
+        if args.output_dir:
+            dist_dir = Path(args.output_dir).resolve()
+        else:
+            dist_dir = current_dir / "dist"
+        dist_dir.mkdir(parents=True, exist_ok=True)
         
         run_cmd = [
             "docker", "run", "--rm",
@@ -558,6 +573,8 @@ def build_docker_platform(target_platform, args):
         # 添加构建参数
         if args.server:
             run_cmd.extend(["--server", args.server])
+        if args.output_dir:
+            run_cmd.extend(["--output-dir", "/app/dist"])  # 容器内的输出目录
         if args.no_test:
             run_cmd.append("--no-test")
         if args.no_clean:
@@ -658,7 +675,7 @@ def run_cross_platform_build(args):
             if platform_name == "macos":
                 # macOS 构建使用本地构建（因为 Docker 中的 macOS 构建比较复杂）
                 if platform_module.system().lower() == "darwin":
-                    builder = MCPServerBuilder(server_script=args.server)
+                    builder = MCPServerBuilder(server_script=args.server, output_dir=args.output_dir)
                     if builder.build_all(
                         clean=not args.no_clean,
                         test=not args.no_test,
@@ -711,6 +728,7 @@ def main():
                        choices=["native", "linux", "windows", "macos", "all"],
                        default="native",
                        help="Target platform to build for (requires Docker for cross-platform)")
+    parser.add_argument("--output-dir", "-o", help="Custom output directory for build artifacts")
     parser.add_argument("--no-clean", action="store_true", help="Skip cleaning")
     parser.add_argument("--no-test", action="store_true", help="Skip tests")
     parser.add_argument("--no-onefile", action="store_true", help="Build as directory")
@@ -735,7 +753,7 @@ def main():
         sys.exit(0 if success else 1)
     
     # 原有的本地构建逻辑
-    builder = MCPServerBuilder(server_script=args.server)
+    builder = MCPServerBuilder(server_script=args.server, output_dir=args.output_dir)
 
     if args.list:
         servers = builder.discover_servers()
