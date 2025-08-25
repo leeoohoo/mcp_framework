@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: mcp-framework
-Version: 0.1.2
+Version: 0.1.2.post1724313300
 Summary: 一个强大且易用的 MCP (Model Context Protocol) 服务器开发框架
 Home-page: https://github.com/mcpframework/mcp_framework
 Author: MCP Framework Team
@@ -61,6 +61,8 @@ Dynamic: requires-python
 # MCP Framework
 
 一个强大且易用的 MCP (Model Context Protocol) 服务器开发框架，支持快速构建、部署和管理 MCP 服务器。
+
+使用该框架开发的mcp_servers: https://gitee.com/wmjsoft_admin/mcp-servers
 
 ## 🚀 特性
 
@@ -465,6 +467,53 @@ if __name__ == "__main__":
 
 #### 2. 构建命令
 
+##### 使用 mcp-build 命令行工具（推荐）
+
+框架提供了专门的 `mcp-build` 命令行工具，简化构建过程：
+
+```bash
+# 基础构建命令
+mcp-build                           # 构建所有发现的服务器
+mcp-build --server my_server.py     # 构建特定服务器
+mcp-build --list                    # 列出所有可构建的服务器
+
+# 构建选项
+mcp-build --no-clean               # 跳过清理构建目录
+mcp-build --no-test                # 跳过测试阶段
+mcp-build --no-onefile             # 构建为目录而非单文件
+mcp-build --include-source         # 在分发包中包含源代码
+mcp-build --clean-only             # 只清理构建目录，不进行构建
+
+# 组合使用
+mcp-build --server weather_server.py --no-test --include-source
+```
+
+**mcp-build 命令详细说明：**
+
+| 参数 | 简写 | 说明 | 示例 |
+|------|------|------|------|
+| `--server` | `-s` | 指定要构建的服务器脚本 | `mcp-build -s my_server.py` |
+| `--list` | `-l` | 列出所有可构建的服务器 | `mcp-build -l` |
+| `--no-clean` | | 跳过构建前的清理步骤 | `mcp-build --no-clean` |
+| `--no-test` | | 跳过构建后的测试验证 | `mcp-build --no-test` |
+| `--no-onefile` | | 构建为目录而非单个可执行文件 | `mcp-build --no-onefile` |
+| `--include-source` | | 在分发包中包含源代码 | `mcp-build --include-source` |
+| `--clean-only` | | 只清理构建目录，不执行构建 | `mcp-build --clean-only` |
+
+**构建流程说明：**
+
+1. **发现阶段**: 自动扫描项目目录，发现所有 MCP 服务器脚本
+2. **清理阶段**: 清理之前的构建文件（可通过 `--no-clean` 跳过）
+3. **依赖分析**: 分析每个服务器的依赖包，包括：
+   - 通用依赖 (`requirements.txt`)
+   - 服务器特定依赖 (`{server_name}_requirements.txt`)
+   - 代码中导入的本地模块
+4. **构建阶段**: 使用 PyInstaller 构建可执行文件
+5. **测试阶段**: 验证构建的可执行文件能正常启动（可通过 `--no-test` 跳过）
+6. **打包阶段**: 创建包含所有必要文件的分发包
+
+##### 使用 Python 脚本构建（传统方式）
+
 ```bash
 # 构建所有服务器
 python build.py
@@ -503,6 +552,49 @@ dist/
 - README 和许可证文件
 - 源代码（如果指定 --include-source）
 
+### 跨平台构建
+
+框架支持跨平台构建，可以在一个平台上构建其他平台的可执行文件：
+
+#### 使用 mcp-build 进行跨平台构建
+
+```bash
+# 构建所有平台版本（需要 Docker）
+mcp-build --platform all
+
+# 构建特定平台
+mcp-build --platform windows      # 构建 Windows 版本
+mcp-build --platform linux        # 构建 Linux 版本
+mcp-build --platform native       # 构建当前平台版本
+
+# 跨平台构建特定服务器
+mcp-build --platform windows --server my_server.py
+
+# 检查 Docker 环境
+mcp-build --check-docker
+```
+
+#### 跨平台构建要求
+
+- **Docker Desktop**: 用于跨平台构建（Windows 和 Linux）
+- **本地构建**: 不需要 Docker，只构建当前平台
+
+#### 便捷脚本
+
+框架还提供了便捷的构建脚本：
+
+```bash
+# 使用跨平台构建脚本
+python build_cross_platform.py --platform all
+
+# 使用 Windows 构建脚本（仅限 Windows 构建）
+./build_windows.sh
+
+# 使用 Docker Compose
+docker-compose --profile build up build-windows
+docker-compose --profile build up build-linux
+```
+
 ### 依赖管理
 
 构建系统支持多层依赖管理：
@@ -519,7 +611,208 @@ project/
 ├── weather_server_requirements.txt  # weather_server 特定依赖
 ├── chat_server.py
 ├── chat_server_requirements.txt     # chat_server 特定依赖
-└── build.py
+├── build.py                      # 构建脚本
+├── build_cross_platform.py      # 跨平台构建脚本
+└── build_windows.sh              # Windows 构建便捷脚本
+```
+
+### 构建输出详解
+
+构建完成后，分发包的详细结构：
+
+```
+dist/
+├── my-server-macos-arm64-20241201_143022.tar.gz
+│   ├── my-server                 # 可执行文件
+│   ├── start.sh                  # Unix 启动脚本
+│   ├── start.bat                 # Windows 启动脚本
+│   ├── requirements.txt          # 依赖列表
+│   ├── README.md                 # 使用说明
+│   ├── LICENSE                   # 许可证文件
+│   └── src/                      # 源代码（如果使用 --include-source）
+├── my-server-windows-amd64-20241201_143025.zip
+└── my-server-linux-x86_64-20241201_143028.tar.gz
+```
+
+**分发包特性：**
+
+- **独立运行**: 包含所有必要的依赖，无需额外安装
+- **跨平台**: 支持 Windows、macOS、Linux
+- **便捷启动**: 提供启动脚本，简化运行过程
+- **完整文档**: 包含 README 和许可证文件
+- **源码可选**: 可选择是否包含源代码
+
+### mcp-build 使用示例和最佳实践
+
+#### 典型工作流程
+
+```bash
+# 1. 开发阶段：列出所有可构建的服务器
+mcp-build --list
+
+# 输出示例：
+# 📋 Available server scripts:
+#    - weather_server.py → Weather MCP Server
+#    - chat_server.py → AI Chat Assistant
+#    - file_manager.py → File Management Server
+
+# 2. 测试构建：构建特定服务器（快速验证）
+mcp-build --server weather_server.py --no-test
+
+# 3. 完整构建：包含测试和源码
+mcp-build --server weather_server.py --include-source
+
+# 4. 生产构建：构建所有服务器
+mcp-build
+
+# 5. 跨平台发布：构建所有平台版本
+mcp-build --platform all
+```
+
+#### 常见使用场景
+
+**场景1：快速开发测试**
+```bash
+# 跳过测试，快速构建验证
+mcp-build --server my_server.py --no-test --no-clean
+```
+
+**场景2：CI/CD 集成**
+```bash
+# 适合自动化构建的命令
+mcp-build --no-test --include-source
+```
+
+**场景3：发布准备**
+```bash
+# 完整构建，包含所有验证
+mcp-build --platform all --include-source
+```
+
+**场景4：调试构建问题**
+```bash
+# 只清理，不构建
+mcp-build --clean-only
+
+# 保留构建文件，便于调试
+mcp-build --server my_server.py --no-clean
+```
+
+#### 构建优化建议
+
+1. **依赖管理优化**
+   ```bash
+   # 为每个服务器创建特定的依赖文件
+   # weather_server_requirements.txt
+   requests>=2.28.0
+   beautifulsoup4>=4.11.0
+   
+   # chat_server_requirements.txt  
+   openai>=1.0.0
+   langchain>=0.1.0
+   ```
+
+2. **构建性能优化**
+   ```bash
+   # 跳过不必要的步骤
+   mcp-build --no-test --no-clean  # 开发阶段
+   
+   # 只构建变更的服务器
+   mcp-build --server changed_server.py
+   ```
+
+3. **分发包优化**
+   ```bash
+   # 生产环境：不包含源码，减小包大小
+   mcp-build
+   
+   # 开发分发：包含源码，便于调试
+   mcp-build --include-source
+   ```
+
+#### 错误排查
+
+**常见问题及解决方案：**
+
+1. **Docker 不可用**
+   ```bash
+   # 检查 Docker 状态
+   mcp-build --check-docker
+   
+   # 如果 Docker 不可用，只构建本地平台
+   mcp-build --platform native
+   ```
+
+2. **依赖冲突**
+   ```bash
+   # 清理构建缓存
+   mcp-build --clean-only
+   
+   # 重新构建
+   mcp-build --server problematic_server.py
+   ```
+
+3. **构建失败**
+   ```bash
+   # 跳过测试，查看构建是否成功
+   mcp-build --server my_server.py --no-test
+   
+   # 保留构建文件，手动检查
+   mcp-build --server my_server.py --no-clean
+   ```
+
+#### 高级用法
+
+**自定义构建脚本集成**
+```python
+#!/usr/bin/env python3
+# custom_build.py
+from mcp_framework.build import MCPServerBuilder
+import subprocess
+
+def custom_build():
+    # 预处理
+    print("🔧 Running custom pre-build steps...")
+    
+    # 使用 mcp-build
+    result = subprocess.run([
+        "mcp-build", 
+        "--server", "my_server.py",
+        "--include-source"
+    ])
+    
+    if result.returncode == 0:
+        print("✅ Build successful!")
+        # 后处理
+        print("📦 Running custom post-build steps...")
+    else:
+        print("❌ Build failed!")
+        return False
+    
+    return True
+
+if __name__ == "__main__":
+    custom_build()
+```
+
+**批量构建脚本**
+```bash
+#!/bin/bash
+# batch_build.sh
+
+echo "🚀 Starting batch build process..."
+
+# 构建开发版本
+echo "📦 Building development versions..."
+mcp-build --include-source
+
+# 构建生产版本
+echo "🏭 Building production versions..."
+mcp-build --platform all
+
+echo "✅ Batch build completed!"
+echo "📁 Check dist/ directory for all packages"
+ls -la dist/
 ```
 
 ## 🌐 Web 界面

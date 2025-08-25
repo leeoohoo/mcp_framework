@@ -500,18 +500,86 @@ cd "$(dirname "$0")"
         return True
 
 
+def check_docker():
+    """检查 Docker 是否可用"""
+    try:
+        subprocess.run(["docker", "--version"], 
+                     check=True, capture_output=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+
+def run_cross_platform_build(args):
+    """运行跨平台构建"""
+    print(f"🌍 Running cross-platform build for {args.platform}...")
+    
+    # 检查 Docker 可用性
+    if not check_docker():
+        print("❌ Docker is required for cross-platform builds")
+        print("   Please install Docker and try again.")
+        return False
+    
+    # 构建跨平台构建脚本的路径
+    project_root = Path(__file__).parent.parent
+    cross_platform_script = project_root / "build_cross_platform.py"
+    
+    if not cross_platform_script.exists():
+        print(f"❌ Cross-platform build script not found: {cross_platform_script}")
+        return False
+    
+    # 构建命令
+    cmd = ["python", str(cross_platform_script), "--platform", args.platform]
+    
+    if args.server:
+        cmd.extend(["--server", args.server])
+    if args.no_test:
+        cmd.append("--no-test")
+    if args.no_clean:
+        cmd.append("--no-clean")
+    if args.include_source:
+        cmd.append("--include-source")
+    
+    try:
+        subprocess.run(cmd, check=True, cwd=project_root)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Cross-platform build failed: {e}")
+        return False
+
+
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description="MCP Server Build Script")
     parser.add_argument("--server", "-s", help="Specific server script to build")
+    parser.add_argument("--platform", "-p", 
+                       choices=["native", "linux", "windows", "all"],
+                       default="native",
+                       help="Target platform to build for (requires Docker for cross-platform)")
     parser.add_argument("--no-clean", action="store_true", help="Skip cleaning")
     parser.add_argument("--no-test", action="store_true", help="Skip tests")
     parser.add_argument("--no-onefile", action="store_true", help="Build as directory")
     parser.add_argument("--include-source", action="store_true", help="Include source")
     parser.add_argument("--clean-only", action="store_true", help="Only clean")
     parser.add_argument("--list", "-l", action="store_true", help="List servers")
+    parser.add_argument("--check-docker", action="store_true", help="Check if Docker is available")
 
     args = parser.parse_args()
+    
+    # 检查 Docker 可用性
+    if args.check_docker:
+        if check_docker():
+            print("✅ Docker is available")
+        else:
+            print("❌ Docker is not available")
+        return
+    
+    # 如果是跨平台构建，调用跨平台构建脚本
+    if args.platform != "native":
+        success = run_cross_platform_build(args)
+        sys.exit(0 if success else 1)
+    
+    # 原有的本地构建逻辑
     builder = MCPServerBuilder(server_script=args.server)
 
     if args.list:
