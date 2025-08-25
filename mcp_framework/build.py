@@ -68,7 +68,13 @@ class MCPServerBuilder:
         if system == "windows":
             return f"windows-{machine}"
         elif system == "darwin":
-            return f"macos-{machine}"
+            # 明确区分 Intel Mac 和 Apple Silicon Mac
+            if machine in ["arm64", "aarch64"]:
+                return "macos-arm64"  # Apple Silicon (M1/M2/M3)
+            elif machine in ["x86_64", "amd64"]:
+                return "macos-x86_64"  # Intel Mac
+            else:
+                return f"macos-{machine}"  # 其他未知架构
         elif system == "linux":
             return f"linux-{machine}"
         else:
@@ -619,24 +625,38 @@ def run_cross_platform_build(args):
     """运行跨平台构建"""
     print(f"🌍 Running cross-platform build for {args.platform}...")
     
+    # 导入 platform 模块
+    import platform as platform_module
+    
     # 检查 Docker 可用性
     if not check_docker():
         print("❌ Docker is required for cross-platform builds")
         print("   Please install Docker and try again.")
         return False
-    
+
     if args.platform == "all":
         platforms = ["linux", "windows", "macos"]
         success_count = 0
         
-        for platform in platforms:
+        # 检查当前系统信息
+        current_system = platform_module.system().lower()
+        current_machine = platform_module.machine().lower()
+        
+        if current_system == "darwin":
+            if current_machine in ["arm64", "aarch64"]:
+                print(f"🍎 Running on Apple Silicon Mac (ARM64)")
+            elif current_machine in ["x86_64", "amd64"]:
+                print(f"🍎 Running on Intel Mac (x86_64)")
+            else:
+                print(f"🍎 Running on Mac ({current_machine})")
+        
+        for platform_name in platforms:
             print(f"\n{'='*50}")
-            print(f"Building for {platform}...")
+            print(f"Building for {platform_name}...")
             print(f"{'='*50}")
             
-            if platform == "macos":
+            if platform_name == "macos":
                 # macOS 构建使用本地构建（因为 Docker 中的 macOS 构建比较复杂）
-                import platform as platform_module
                 if platform_module.system().lower() == "darwin":
                     builder = MCPServerBuilder(server_script=args.server)
                     if builder.build_all(
@@ -645,19 +665,19 @@ def run_cross_platform_build(args):
                         onefile=not args.no_onefile,
                         include_source=args.include_source
                     ):
-                        print(f"✅ {platform} build successful")
+                        print(f"✅ {platform_name} build successful")
                         success_count += 1
                     else:
-                        print(f"❌ {platform} build failed")
+                        print(f"❌ {platform_name} build failed")
                 else:
                     print(f"⚠️  macOS build skipped (not running on macOS)")
                     print(f"   macOS builds can only be performed on macOS systems")
             else:
-                if build_docker_platform(platform, args):
-                    print(f"✅ {platform} build successful")
+                if build_docker_platform(platform_name, args):
+                    print(f"✅ {platform_name} build successful")
                     success_count += 1
                 else:
-                    print(f"❌ {platform} build failed")
+                    print(f"❌ {platform_name} build failed")
         
         print(f"\n{'='*50}")
         print(f"Build Summary: {success_count}/{len(platforms)} platforms successful")
@@ -667,7 +687,6 @@ def run_cross_platform_build(args):
     else:
         if args.platform == "macos":
             # macOS 构建使用本地构建
-            import platform as platform_module
             if platform_module.system().lower() == "darwin":
                 builder = MCPServerBuilder(server_script=args.server)
                 return builder.build_all(

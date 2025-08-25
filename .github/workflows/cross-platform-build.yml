@@ -1,0 +1,311 @@
+# MCP Framework 跨平台构建工作流
+# 支持 Linux、Windows、Intel Mac 和 Apple Silicon Mac 四个平台
+
+name: Cross-Platform Build
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      server_script:
+        description: '服务器脚本文件名（例如：my_server.py）'
+        required: true
+        default: 'test_server.py'
+        type: string
+      build_platform:
+        description: '构建平台'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - linux
+        - windows
+        - macos
+        - native
+
+env:
+  PYTHON_VERSION: '3.11'
+  SERVER_SCRIPT: ${{ github.event.inputs.server_script || 'test_server.py' }}
+
+jobs:
+  # 检查服务器脚本是否存在
+  check-script:
+    runs-on: ubuntu-latest
+    outputs:
+      script-exists: ${{ steps.check.outputs.exists }}
+      script-name: ${{ steps.check.outputs.name }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Check if server script exists
+      id: check
+      run: |
+        if [ -f "${{ env.SERVER_SCRIPT }}" ]; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+          echo "name=$(basename ${{ env.SERVER_SCRIPT }} .py)" >> $GITHUB_OUTPUT
+          echo "✅ 找到服务器脚本: ${{ env.SERVER_SCRIPT }}"
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "❌ 服务器脚本不存在: ${{ env.SERVER_SCRIPT }}"
+          echo "请确保脚本文件存在于项目根目录"
+        fi
+
+  # 跨平台构建任务
+  build:
+    needs: check-script
+    if: needs.check-script.outputs.script-exists == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+            build-method: docker
+            runner-arch: x64
+          
+          # Windows x86_64
+          - os: windows-latest
+            platform: windows
+            arch: x86_64
+            build-method: docker
+            runner-arch: x64
+          
+          # macOS Intel x86_64
+          - os: macos-13
+            platform: macos
+            arch: x86_64
+            build-method: native
+            runner-arch: x64
+          
+          # macOS Apple Silicon ARM64 (M1/M2/M3)
+          - os: macos-latest
+            platform: macos
+            arch: arm64
+            build-method: native
+            runner-arch: arm64
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    # 设置 Docker（仅 Linux 和 Windows 需要）
+    - name: Set up Docker Buildx
+      if: matrix.build-method == 'docker'
+      uses: docker/setup-buildx-action@v3
+    
+    # 安装 MCP Framework
+    - name: Install MCP Framework
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+    
+    # 安装项目依赖
+    - name: Install project dependencies
+      run: |
+        if [ -f requirements.txt ]; then
+          pip install -r requirements.txt
+        fi
+      shell: bash
+    
+    # 显示系统信息
+    - name: Show system info
+      run: |
+        echo "🖥️  系统信息:"
+        echo "操作系统: ${{ matrix.os }}"
+        echo "平台: ${{ matrix.platform }}"
+        echo "架构: ${{ matrix.arch }}"
+        echo "构建方法: ${{ matrix.build-method }}"
+        echo "Runner 架构: ${{ matrix.runner-arch }}"
+        python -c "import platform; print(f'Python 平台: {platform.platform()}'); print(f'机器架构: {platform.machine()}'); print(f'处理器: {platform.processor()}')"
+    
+    # 构建 MCP 服务器
+    - name: Build MCP Server for ${{ matrix.platform }}-${{ matrix.arch }}
+      run: |
+        echo "🔨 开始构建 ${{ matrix.platform }}-${{ matrix.arch }} 平台..."
+        
+        if [ "${{ matrix.build-method }}" = "docker" ]; then
+          # 使用 Docker 跨平台构建
+          python -m mcp_framework.build --platform ${{ matrix.platform }} --server ${{ env.SERVER_SCRIPT }} --no-test
+        else
+          # 使用本地构建（macOS）
+          python -m mcp_framework.build --platform native --server ${{ env.SERVER_SCRIPT }} --no-test
+        fi
+      shell: bash
+    
+    # 验证构建产物
+    - name: Verify build artifacts
+      run: |
+        echo "📦 构建产物列表:"
+        if [ -d "dist" ]; then
+          ls -la dist/
+          echo ""
+          echo "📊 构建产物大小:"
+          du -sh dist/*
+        else
+          echo "❌ 没有找到 dist 目录"
+          exit 1
+        fi
+      shell: bash
+    
+    # 测试可执行文件（仅 macOS 本地构建）
+    - name: Test executable
+      if: matrix.build-method == 'native'
+      run: |
+        echo "🧪 测试可执行文件..."
+        if [ -f "dist/${{ needs.check-script.outputs.script-name }}" ]; then
+          ./dist/${{ needs.check-script.outputs.script-name }} --help
+          echo "✅ 可执行文件测试通过"
+        else
+          echo "⚠️  可执行文件不存在，跳过测试"
+        fi
+      shell: bash
+    
+    # 上传构建产物
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ needs.check-script.outputs.script-name }}-${{ matrix.platform }}-${{ matrix.arch }}
+        path: dist/
+        retention-days: 30
+        compression-level: 6
+    
+    # 显示构建摘要
+    - name: Build summary
+      run: |
+        echo "✅ ${{ matrix.platform }}-${{ matrix.arch }} 构建完成"
+        echo "📁 产物已上传为: ${{ needs.check-script.outputs.script-name }}-${{ matrix.platform }}-${{ matrix.arch }}"
+
+  # 构建摘要
+  build-summary:
+    needs: [check-script, build]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+    - name: Build Summary
+      run: |
+        echo "🎯 跨平台构建摘要"
+        echo "=================="
+        echo "服务器脚本: ${{ env.SERVER_SCRIPT }}"
+        echo "脚本名称: ${{ needs.check-script.outputs.script-name }}"
+        echo "构建状态: ${{ needs.build.result }}"
+        echo ""
+        echo "📦 支持的平台:"
+        echo "- Linux x86_64 (Docker 构建)"
+        echo "- Windows x86_64 (Docker 构建)"
+        echo "- macOS Intel x86_64 (本地构建)"
+        echo "- macOS Apple Silicon ARM64 (本地构建)"
+        echo ""
+        if [ "${{ needs.build.result }}" = "success" ]; then
+          echo "✅ 所有平台构建成功！"
+        else
+          echo "❌ 部分平台构建失败，请检查日志"
+        fi
+
+  # 自动发布到 GitHub Releases（仅标签推送时）
+  release:
+    needs: [check-script, build]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') && needs.build.result == 'success'
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts/
+    
+    - name: Prepare release files
+      run: |
+        echo "📦 准备发布文件..."
+        mkdir -p release/
+        
+        # 复制所有构建产物到发布目录
+        find artifacts/ -name "*.tar.gz" -exec cp {} release/ \;
+        find artifacts/ -name "*.zip" -exec cp {} release/ \;
+        
+        echo "发布文件列表:"
+        ls -la release/
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: release/*
+        draft: false
+        prerelease: false
+        body: |
+          ## 🚀 MCP Server 跨平台发布
+          
+          此版本包含以下平台的构建产物：
+          
+          ### 📱 支持平台
+          - **Linux x86_64** - 适用于大多数 Linux 发行版
+          - **Windows x86_64** - 适用于 Windows 10/11
+          - **macOS Intel (x86_64)** - 适用于 Intel 芯片的 Mac
+          - **macOS Apple Silicon (ARM64)** - 适用于 M1/M2/M3 芯片的 Mac
+          
+          ### 📥 下载说明
+          - 下载对应您系统架构的文件
+          - 解压后即可直接运行
+          - 详细使用说明请参考项目文档
+          
+          ### 🔧 技术信息
+          - Python 版本: ${{ env.PYTHON_VERSION }}
+          - 构建时间: ${{ github.run_number }}
+          - 提交哈希: ${{ github.sha }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Docker 跨平台构建测试（可选）
+  docker-test:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install MCP Framework
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+    
+    - name: Test Docker cross-platform builds
+      run: |
+        echo "🐳 测试 Docker 跨平台构建..."
+        
+        # 测试 Linux 构建
+        if [ -f "${{ env.SERVER_SCRIPT }}" ]; then
+          echo "测试 Linux 构建..."
+          python -m mcp_framework.build --platform linux --server ${{ env.SERVER_SCRIPT }} --no-test
+          
+          echo "测试 Windows 构建..."
+          python -m mcp_framework.build --platform windows --server ${{ env.SERVER_SCRIPT }} --no-test
+        else
+          echo "⚠️  服务器脚本不存在，跳过 Docker 测试"
+        fi
+    
+    - name: Upload Docker test artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-cross-platform-test
+        path: dist/
+        retention-days: 7
