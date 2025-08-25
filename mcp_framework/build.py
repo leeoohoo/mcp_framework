@@ -510,6 +510,110 @@ def check_docker():
         return False
 
 
+def build_docker_platform(target_platform, args):
+    """使用 Docker 构建指定平台"""
+    print(f"🐳 Building for {target_platform} using Docker...")
+    
+    current_dir = Path.cwd()
+    
+    # 创建临时 Dockerfile
+    dockerfile_content = get_dockerfile_content(target_platform)
+    dockerfile_path = current_dir / f"Dockerfile.{target_platform}"
+    
+    try:
+        # 写入 Dockerfile
+        with open(dockerfile_path, 'w', encoding='utf-8') as f:
+            f.write(dockerfile_content)
+        
+        # 构建 Docker 镜像
+        image_name = f"mcp-server-builder-{target_platform}"
+        build_cmd = [
+            "docker", "build", 
+            "-f", str(dockerfile_path),
+            "-t", image_name,
+            "."
+        ]
+        
+        print("   Building Docker image...")
+        subprocess.run(build_cmd, check=True, cwd=current_dir)
+        
+        # 运行构建容器
+        dist_dir = current_dir / "dist"
+        dist_dir.mkdir(exist_ok=True)
+        
+        run_cmd = [
+            "docker", "run", "--rm",
+            "-v", f"{dist_dir}:/app/dist",
+            "-v", f"{current_dir}:/app/src",
+            image_name
+        ]
+        
+        # 添加构建参数
+        if args.server:
+            run_cmd.extend(["--server", args.server])
+        if args.no_test:
+            run_cmd.append("--no-test")
+        if args.no_clean:
+            run_cmd.append("--no-clean")
+        if args.include_source:
+            run_cmd.append("--include-source")
+        
+        print("   Running build in container...")
+        subprocess.run(run_cmd, check=True, cwd=current_dir)
+        
+        return True
+        
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Docker build failed: {e}")
+        return False
+    finally:
+        # 清理临时 Dockerfile
+        if dockerfile_path.exists():
+            dockerfile_path.unlink()
+
+
+def get_dockerfile_content(platform):
+    """获取指定平台的 Dockerfile 内容"""
+    if platform == "linux":
+        return '''FROM python:3.11-slim
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制源代码
+COPY . /app/src/
+
+# 安装 Python 依赖
+RUN pip install --no-cache-dir pyinstaller
+
+# 设置入口点
+ENTRYPOINT ["python", "/app/src/mcp_framework/build.py"]
+'''
+    elif platform == "windows":
+        return '''FROM python:3.11-windowsservercore
+
+# 设置工作目录
+WORKDIR C:\\app
+
+# 复制源代码
+COPY . C:\\app\\src\\
+
+# 安装 Python 依赖
+RUN pip install --no-cache-dir pyinstaller
+
+# 设置入口点
+ENTRYPOINT ["python", "C:\\app\\src\\mcp_framework\\build.py"]
+'''
+    else:
+        raise ValueError(f"Unsupported platform: {platform}")
+
+
 def run_cross_platform_build(args):
     """运行跨平台构建"""
     print(f"🌍 Running cross-platform build for {args.platform}...")
@@ -520,32 +624,28 @@ def run_cross_platform_build(args):
         print("   Please install Docker and try again.")
         return False
     
-    # 构建跨平台构建脚本的路径
-    project_root = Path(__file__).parent.parent
-    cross_platform_script = project_root / "build_cross_platform.py"
-    
-    if not cross_platform_script.exists():
-        print(f"❌ Cross-platform build script not found: {cross_platform_script}")
-        return False
-    
-    # 构建命令
-    cmd = ["python", str(cross_platform_script), "--platform", args.platform]
-    
-    if args.server:
-        cmd.extend(["--server", args.server])
-    if args.no_test:
-        cmd.append("--no-test")
-    if args.no_clean:
-        cmd.append("--no-clean")
-    if args.include_source:
-        cmd.append("--include-source")
-    
-    try:
-        subprocess.run(cmd, check=True, cwd=project_root)
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Cross-platform build failed: {e}")
-        return False
+    if args.platform == "all":
+        platforms = ["linux", "windows"]
+        success_count = 0
+        
+        for platform in platforms:
+            print(f"\n{'='*50}")
+            print(f"Building for {platform}...")
+            print(f"{'='*50}")
+            
+            if build_docker_platform(platform, args):
+                print(f"✅ {platform} build successful")
+                success_count += 1
+            else:
+                print(f"❌ {platform} build failed")
+        
+        print(f"\n{'='*50}")
+        print(f"Build Summary: {success_count}/{len(platforms)} platforms successful")
+        print(f"{'='*50}")
+        
+        return success_count == len(platforms)
+    else:
+        return build_docker_platform(args.platform, args)
 
 
 def main():
