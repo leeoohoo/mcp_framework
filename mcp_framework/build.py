@@ -545,6 +545,7 @@ def build_docker_platform(target_platform, args):
             "docker", "run", "--rm",
             "-v", f"{dist_dir}:/app/dist",
             "-v", f"{current_dir}:/app/src",
+            "-w", "/app/src",  # 设置工作目录为源代码目录
             image_name
         ]
         
@@ -589,11 +590,11 @@ WORKDIR /app
 # 复制源代码
 COPY . /app/src/
 
-# 安装 Python 依赖
-RUN pip install --no-cache-dir pyinstaller
+# 安装 mcp-framework 包
+RUN pip install --no-cache-dir mcp-framework
 
-# 设置入口点
-ENTRYPOINT ["python", "/app/src/mcp_framework/build.py"]
+# 设置入口点使用 mcp-build 命令
+ENTRYPOINT ["mcp-build"]
 '''
     elif platform == "windows":
         return '''FROM python:3.11-windowsservercore
@@ -604,11 +605,11 @@ WORKDIR C:\\app
 # 复制源代码
 COPY . C:\\app\\src\\
 
-# 安装 Python 依赖
-RUN pip install --no-cache-dir pyinstaller
+# 安装 mcp-framework 包
+RUN pip install --no-cache-dir mcp-framework
 
-# 设置入口点
-ENTRYPOINT ["python", "C:\\app\\src\\mcp_framework\\build.py"]
+# 设置入口点使用 mcp-build 命令
+ENTRYPOINT ["mcp-build"]
 '''
     else:
         raise ValueError(f"Unsupported platform: {platform}")
