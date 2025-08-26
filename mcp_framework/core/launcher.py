@@ -94,8 +94,8 @@ async def run_server(
             from .config import ServerConfig
             config = ServerConfig.from_dict(merged_config)
             
-            # 配置服务器实例
-            server_instance.configure_server(existing_config)
+            # 配置服务器实例，使用合并后的配置
+            server_instance.configure_server(merged_config)
 
         # 初始化服务器
         print(f"🔧 初始化 {server_name}...")

@@ -28,7 +28,11 @@ class ServerConfig:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ServerConfig':
-        return cls(**data)
+        # 过滤掉不支持的字段，只保留ServerConfig支持的字段
+        import inspect
+        valid_fields = set(inspect.signature(cls).parameters.keys())
+        filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+        return cls(**filtered_data)
 
 
 @dataclass
