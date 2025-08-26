@@ -639,6 +639,7 @@ class APIHandler:
 
             # 加载当前配置
             current_config = self.config_manager.load_config()
+            old_config_dict = current_config.to_dict()
 
             # 更新配置
             for key, value in data.items():
@@ -647,6 +648,11 @@ class APIHandler:
 
             # 保存配置
             if self.config_manager.save_config(current_config):
+                # 通知MCP服务器配置更新（如果配置项与服务器参数相关）
+                new_config_dict = current_config.to_dict()
+                if hasattr(self.mcp_server, '_notify_config_update'):
+                    self.mcp_server._notify_config_update(old_config_dict, new_config_dict)
+                
                 return web.json_response({
                     'success': True,
                     'message': 'Configuration updated successfully'

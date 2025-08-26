@@ -100,8 +100,12 @@ async def run_server(
             print(f"⚠️  初始化警告: {e}")
             print("💡 某些功能可能需要通过配置页面设置后重启服务器")
 
-        # 创建 HTTP 服务器
-        http_server = MCPHTTPServer(server_instance, config)
+        # 创建适配器，将ServerConfigManager包装为ConfigManager接口
+        from .config import ServerConfigAdapter
+        config_adapter = ServerConfigAdapter(port_config_manager)
+        
+        # 创建 HTTP 服务器，使用正确的配置管理器
+        http_server = MCPHTTPServer(server_instance, config, config_adapter)
 
         print(f"🚀 {server_name} 启动中...")
         print(f"📍 服务器地址: http://{config.host}:{config.port}")

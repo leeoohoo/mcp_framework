@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class MCPHTTPServer:
     """通用 MCP HTTP 服务器"""
 
-    def __init__(self, mcp_server: BaseMCPServer, config: ServerConfig):
+    def __init__(self, mcp_server: BaseMCPServer, config: ServerConfig, config_manager = None):
         self.mcp_server = mcp_server
         self.config = config
         self.host = config.host
@@ -29,7 +29,8 @@ class MCPHTTPServer:
         self.app = web.Application()
         self.logger = logging.getLogger(f"{__name__}.MCPHTTPServer")
         self.start_time = datetime.now()
-        self.config_manager = ConfigManager()
+        # 使用传入的配置管理器，如果没有则创建默认的
+        self.config_manager = config_manager or ConfigManager()
 
         # 初始化处理器
         self.mcp_handler = MCPRequestHandler(mcp_server, self.config_manager)

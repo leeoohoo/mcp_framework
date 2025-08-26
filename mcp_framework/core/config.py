@@ -173,3 +173,38 @@ class ServerConfigManager:
     def create_default(cls, server_name: str) -> 'ServerConfigManager':
         """创建默认配置管理器的工厂方法"""
         return cls(server_name)
+
+
+class ServerConfigAdapter:
+    """将ServerConfigManager适配为ConfigManager接口的适配器"""
+    
+    def __init__(self, server_config_manager: ServerConfigManager):
+        self.server_config_manager = server_config_manager
+        self.logger = logging.getLogger(f"{__name__}.ServerConfigAdapter")
+    
+    def load_config(self) -> ServerConfig:
+        """加载配置并转换为ServerConfig对象"""
+        config_dict = self.server_config_manager.load_server_config()
+        if config_dict:
+            try:
+                return ServerConfig.from_dict(config_dict)
+            except Exception as e:
+                self.logger.error(f"Failed to convert config dict to ServerConfig: {e}")
+        
+        # 返回默认配置
+        return ServerConfig()
+    
+    def save_config(self, config: ServerConfig) -> bool:
+        """保存ServerConfig对象"""
+        return self.server_config_manager.save_server_config(config.to_dict())
+    
+    def reset_config(self) -> ServerConfig:
+        """重置配置为默认值"""
+        config = ServerConfig()
+        self.save_config(config)
+        return config
+    
+    @property
+    def config_file(self):
+        """获取配置文件路径"""
+        return self.server_config_manager.config_file

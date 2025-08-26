@@ -5,7 +5,8 @@ MCP 服务器配置页面
 
 import logging
 from aiohttp import web
-from ..core.config import ConfigManager
+from typing import Union
+from ..core.config import ConfigManager, ServerConfigAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 class ConfigPageHandler:
     """配置页面处理器"""
 
-    def __init__(self, config_manager: ConfigManager):
+    def __init__(self, config_manager: Union[ConfigManager, ServerConfigAdapter]):
         self.config_manager = config_manager
         self.logger = logging.getLogger(f"{__name__}.ConfigPageHandler")
 

@@ -40,6 +40,9 @@ class BaseMCPServer(ABC):
         self._stop_streaming: bool = False  # 全局停止标志
         self._session_stop_flags: Dict[str, bool] = {}  # 单个会话停止标志
 
+        # 配置更新回调机制
+        self._config_update_callbacks: List[Callable[[Dict[str, Any], Dict[str, Any]], None]] = []
+
         # 尝试加载已保存的配置
         saved_config = self.server_config_manager.load_server_config()
         if saved_config:
@@ -328,6 +331,9 @@ class BaseMCPServer(ABC):
     def configure_server(self, config: Dict[str, Any]) -> bool:
         """配置服务器参数"""
         try:
+            # 保存旧配置用于回调通知
+            old_config = self.server_config.copy()
+            
             # 验证配置参数
             parameters = self.get_server_parameters()
             param_dict = {p.name: p for p in parameters}
@@ -359,6 +365,10 @@ class BaseMCPServer(ABC):
             # 保存配置
             if self.server_config_manager.save_server_config(self.server_config):
                 self.logger.info(f"Server configured and saved: {self.server_config}")
+                
+                # 通知配置更新回调
+                self._notify_config_update(old_config, self.server_config.copy())
+                
                 return True
             else:
                 self.logger.error("Failed to save server configuration")
@@ -371,6 +381,30 @@ class BaseMCPServer(ABC):
     def get_config_value(self, key: str, default=None):
         """获取配置值"""
         return self.server_config.get(key, default)
+
+    def register_config_update_callback(self, callback: Callable[[Dict[str, Any], Dict[str, Any]], None]) -> None:
+        """注册配置更新回调函数
+        
+        Args:
+            callback: 回调函数，接收两个参数：(old_config, new_config)
+        """
+        if callback not in self._config_update_callbacks:
+            self._config_update_callbacks.append(callback)
+            self.logger.info(f"Registered config update callback: {callback.__name__}")
+
+    def unregister_config_update_callback(self, callback: Callable[[Dict[str, Any], Dict[str, Any]], None]) -> None:
+        """取消注册配置更新回调函数"""
+        if callback in self._config_update_callbacks:
+            self._config_update_callbacks.remove(callback)
+            self.logger.info(f"Unregistered config update callback: {callback.__name__}")
+
+    def _notify_config_update(self, old_config: Dict[str, Any], new_config: Dict[str, Any]) -> None:
+        """通知所有注册的回调函数配置已更新"""
+        for callback in self._config_update_callbacks:
+            try:
+                callback(old_config, new_config)
+            except Exception as e:
+                self.logger.error(f"Error in config update callback {callback.__name__}: {e}")
 
     def add_tool(self, tool: dict) -> None:
         """添加工具（去重：同名工具将被替换而不是重复添加）"""
