@@ -83,16 +83,27 @@ async def run_server(
         # 检查是否存在该端口的配置文件，如果不存在则创建
         if not port_config_manager.config_exists():
             print(f"📝 为端口 {config.port} 创建新的配置文件...")
-            port_config_manager.save_server_config(config.to_dict())
+            # 创建完整的默认配置，包含所有ServerConfig字段
+            default_config = config.to_dict()
+            port_config_manager.save_server_config(default_config)
             print(f"✅ 配置文件已创建: {port_config_manager.config_file}")
         else:
             print(f"📂 使用现有配置文件: {port_config_manager.config_file}")
             # 加载现有配置并合并命令行参数
             existing_config = port_config_manager.load_server_config()
-            # 命令行参数优先级更高
-            merged_config = {**existing_config, **{k: v for k, v in config.to_dict().items() if v is not None}}
+            
+            # 先用ServerConfig默认值作为基础，确保所有必需字段都存在
+            default_config = config.to_dict()
+            # 然后用现有配置覆盖（保留用户自定义字段）
+            merged_config = {**default_config, **existing_config}
+            # 最后用命令行参数覆盖（命令行参数优先级最高）
+            merged_config.update({k: v for k, v in config.to_dict().items() if v is not None})
+            
             from .config import ServerConfig
             config = ServerConfig.from_dict(merged_config)
+            
+            # 保存合并后的完整配置，确保配置文件包含所有必需字段
+            port_config_manager.save_server_config(merged_config)
             
             # 配置服务器实例，使用合并后的配置
             server_instance.configure_server(merged_config)

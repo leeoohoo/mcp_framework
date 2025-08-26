@@ -19,13 +19,11 @@ class TestMCPServer(EnhancedMCPServer):
             version="1.0.0",
             description="测试配置文件优先级的服务器"
         )
-        self._setup_tools()
     
     async def initialize(self):
         """初始化服务器"""
         # 获取配置的测试目录
         test_dir = self.get_config_value('test_directory', '/tmp/test_mcp')
-        
         # 确保测试目录存在
         os.makedirs(test_dir, exist_ok=True)
         
@@ -33,9 +31,9 @@ class TestMCPServer(EnhancedMCPServer):
         self.logger.info(f"当前配置: {self.config}")
         self.logger.info(f"测试目录: {test_dir}")
     
-    def _setup_tools(self):
-        """设置工具"""
-        
+    @property
+    def setup_server_params(self):
+        """设置服务器参数 - 通过属性方式触发装饰器注册"""
         # 使用装饰器方式定义服务器配置参数
         @self.decorators.server_param("test_directory")
         async def test_directory_param(
@@ -50,6 +48,11 @@ class TestMCPServer(EnhancedMCPServer):
         ):
             """测试目录配置参数"""
             pass
+        return True
+    
+    @property
+    def setup_tools(self):
+        """设置工具"""
         
         @self.tool("获取服务器配置信息")
         async def get_server_config() -> dict:

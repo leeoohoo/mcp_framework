@@ -54,10 +54,9 @@ class BaseMCPServer(ABC):
         """处理工具调用，子类必须实现"""
         pass
 
-    @abstractmethod
     def get_server_parameters(self) -> List[ServerParameter]:
-        """获取服务器配置参数定义，子类必须实现"""
-        pass
+        """获取服务器配置参数定义，子类可以重写"""
+        return []
 
     async def handle_resource_request(self, uri: str) -> Dict[str, Any]:
         """处理资源请求，子类可以重写"""
@@ -690,6 +689,12 @@ class EnhancedMCPServer(BaseMCPServer):
 
     def get_server_parameters(self) -> List[ServerParameter]:
         """获取服务器参数定义，支持装饰器配置"""
+        # 触发装饰器注册（如果有 setup_tools 或 setup_server_params 属性）
+        if hasattr(self, 'setup_tools'):
+            _ = self.setup_tools
+        if hasattr(self, 'setup_server_params'):
+            _ = self.setup_server_params
+        
         # 合并装饰器配置的参数和子类定义的参数
         # 检查 decorators 是否已初始化
         decorator_params = []
