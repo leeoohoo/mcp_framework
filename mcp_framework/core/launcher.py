@@ -77,6 +77,9 @@ async def run_server(
         # 根据端口号创建专用的配置管理器
         port_config_manager = create_port_based_config_manager(server_name, config.port)
         
+        # 为服务器实例设置正确的配置管理器
+        server_instance.server_config_manager = port_config_manager
+        
         # 检查是否存在该端口的配置文件，如果不存在则创建
         if not port_config_manager.config_exists():
             print(f"📝 为端口 {config.port} 创建新的配置文件...")
@@ -90,6 +93,9 @@ async def run_server(
             merged_config = {**existing_config, **{k: v for k, v in config.to_dict().items() if v is not None}}
             from .config import ServerConfig
             config = ServerConfig.from_dict(merged_config)
+            
+            # 配置服务器实例
+            server_instance.configure_server(existing_config)
 
         # 初始化服务器
         print(f"🔧 初始化 {server_name}...")

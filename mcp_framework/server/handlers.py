@@ -6,12 +6,12 @@ MCP HTTP 服务器请求处理器
 import logging
 from datetime import datetime
 from aiohttp import web
-from typing import Dict, Any
+from typing import Dict, Any, Union
 import json
 import asyncio
 
 from ..core.base import BaseMCPServer
-from ..core.config import ConfigManager
+from ..core.config import ConfigManager, ServerConfigAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class MCPRequestHandler:
     """MCP 请求处理器"""
 
-    def __init__(self, mcp_server: BaseMCPServer, config_manager: ConfigManager):
+    def __init__(self, mcp_server: BaseMCPServer, config_manager: Union[ConfigManager, ServerConfigAdapter]):
         self.mcp_server = mcp_server
         self.config_manager = config_manager
         self.start_time = datetime.now()
@@ -580,7 +580,7 @@ class SSEHandler:
 class APIHandler:
     """API 处理器"""
 
-    def __init__(self, mcp_server: BaseMCPServer, config_manager: ConfigManager):
+    def __init__(self, mcp_server: BaseMCPServer, config_manager: Union[ConfigManager, ServerConfigAdapter]):
         self.mcp_server = mcp_server
         self.config_manager = config_manager
         self.start_time = datetime.now()

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcp-framework"
-version = "0.1.14"
+version = "0.1.15"
 description = "一个强大且易用的 MCP (Model Context Protocol) 服务器开发框架"
 readme = "README.md"
 requires-python = ">=3.8"

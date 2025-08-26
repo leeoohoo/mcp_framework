@@ -29,8 +29,10 @@ class MCPHTTPServer:
         self.app = web.Application()
         self.logger = logging.getLogger(f"{__name__}.MCPHTTPServer")
         self.start_time = datetime.now()
-        # 使用传入的配置管理器，如果没有则创建默认的
-        self.config_manager = config_manager or ConfigManager()
+        # 使用传入的配置管理器，必须提供有效的配置管理器
+        if config_manager is None:
+            raise ValueError("config_manager is required and cannot be None")
+        self.config_manager = config_manager
 
         # 初始化处理器
         self.mcp_handler = MCPRequestHandler(mcp_server, self.config_manager)

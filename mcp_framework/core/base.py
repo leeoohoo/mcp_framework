@@ -32,8 +32,9 @@ class BaseMCPServer(ABC):
         # 服务器运行时配置
         self.server_config: Dict[str, Any] = {}
 
-        # 添加配置管理器
-        self.server_config_manager = ServerConfigManager(name)
+        # 注意：不在这里创建配置管理器，因为它应该由启动器根据端口创建
+        # 这避免了创建没有端口号的默认配置文件
+        self.server_config_manager = None
 
         # 流式停止管理
         self._streaming_sessions: Set[str] = set()  # 活跃的流式会话ID
@@ -42,11 +43,6 @@ class BaseMCPServer(ABC):
 
         # 配置更新回调机制
         self._config_update_callbacks: List[Callable[[Dict[str, Any], Dict[str, Any]], None]] = []
-
-        # 尝试加载已保存的配置
-        saved_config = self.server_config_manager.load_server_config()
-        if saved_config:
-            self.configure_server(saved_config)
 
     @abstractmethod
     async def initialize(self) -> None:
