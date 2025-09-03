@@ -9,6 +9,7 @@
 ### 核心功能
 - **简单易用**: 基于装饰器的 API 设计，快速定义工具和资源
 - **类型安全**: 完整的类型注解支持，自动生成 JSON Schema
+- **角色过滤**: 支持为工具指定角色，实现基于角色的工具过滤和访问控制
 - **流式支持**: 内置流式响应支持，适合大数据量处理
 - **配置管理**: 灵活的配置系统，支持多端口配置
 - **自动构建**: 集成 PyInstaller 构建系统，一键生成可执行文件
@@ -57,13 +58,13 @@ class MyMCPServer(EnhancedMCPServer):
             version="1.0.0",
             description="我的第一个 MCP 服务器"
         )
-        self._setup_tools()
     
     async def initialize(self):
         """初始化服务器"""
         self.logger.info("MyMCPServer 初始化完成")
     
-    def _setup_tools(self):
+    @property
+    def setup_tools(self):
         """设置工具和资源"""
         
         # 使用装饰器定义工具
@@ -75,6 +76,14 @@ class MyMCPServer(EnhancedMCPServer):
             """计算两个数字的和"""
             return a + b
         
+        # 带角色的工具示例
+        @self.tool("数据分析", role="analyst")
+        async def analyze_data(
+            data: Annotated[str, Required("要分析的数据")]
+        ) -> str:
+            """分析数据"""
+            return f"分析结果: {data}"
+        
         # 定义流式工具
         @self.streaming_tool("生成数字序列")
         async def generate_sequence(
@@ -85,6 +94,17 @@ class MyMCPServer(EnhancedMCPServer):
             for i in range(start, end + 1):
                 yield f"数字: {i}"
                 await asyncio.sleep(0.1)  # 模拟处理时间
+        
+        # 带角色的流式工具
+        @self.streaming_tool("分析数据流", role="analyst")
+        async def analyze_data_stream(
+            data: Annotated[str, Required("要分析的数据")]
+        ):
+            """流式分析数据 - 仅限analyst角色"""
+            steps = ["数据预处理", "特征提取", "模式识别", "结果生成"]
+            for step in steps:
+                yield f"{step}: {data}"
+                await asyncio.sleep(0.5)
         
         # 定义资源
         @self.resource(
@@ -119,12 +139,27 @@ python my_server.py --port 8080 --host localhost
 #### 工具装饰器
 
 ```python
-# 在 _setup_tools 方法中定义工具
-def _setup_tools(self):
+# 使用 @property 装饰器定义工具
+@property
+def setup_tools(self):
     # 基础工具
     @self.tool("工具描述")
     async def my_tool(param1: str, param2: int) -> str:
         return f"处理结果: {param1} - {param2}"
+    
+    # 带角色的工具（用于多角色系统）
+    @self.tool("规划任务", role="planner")
+    async def plan_task(task: str) -> str:
+        return f"任务规划: {task}"
+    
+    @self.tool("执行任务", role="executor")
+    async def execute_task(task: str) -> str:
+        return f"执行任务: {task}"
+    
+    # 通用工具（无角色限制）
+    @self.tool("获取状态")
+    async def get_status() -> str:
+        return "服务器运行正常"
     
     # 流式工具
     @self.streaming_tool("流式工具描述")
@@ -132,7 +167,41 @@ def _setup_tools(self):
         for i in range(10):
             yield f"处理步骤 {i}: {query}"
             await asyncio.sleep(0.1)
+    
+    # 带角色的流式工具
+    @self.streaming_tool("分析数据流", role="analyst")
+    async def analyze_data_stream(data: str):
+        for step in ["预处理", "分析", "总结"]:
+            yield f"{step}: {data}"
+            await asyncio.sleep(0.5)
 ```
+
+#### 角色过滤功能
+
+框架支持为工具指定角色（role），实现基于角色的工具过滤：
+
+**装饰器参数**：
+- `role`: 可选参数，指定工具的角色标识
+- 不指定 `role` 的工具为通用工具，对所有角色可见
+
+**API 调用**：
+```bash
+# HTTP API - 获取所有工具
+curl http://localhost:8080/tools/list
+
+# HTTP API - 获取特定角色的工具
+curl "http://localhost:8080/tools/list?role=planner"
+
+# MCP 协议 - 获取特定角色的工具
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {"role": "executor"}}' \
+  http://localhost:8080/mcp
+```
+
+**过滤规则**：
+- 指定角色时：返回匹配该角色的工具 + 通用工具（无角色）
+- 不指定角色时：返回所有工具
+- 支持 HTTP API 和 MCP 协议两种调用方式
 
 #### 参数类型注解
 
@@ -149,8 +218,9 @@ from mcp_framework.core.decorators import (
     PathParam
 )
 
-# 在 _setup_tools 方法中定义
-def _setup_tools(self):
+# 使用 @property 装饰器定义
+@property
+def setup_tools(self):
     # 流式工具参数示例
     @self.streaming_tool(description="📖 **File Line Range Reader** - 流式读取文件指定行范围")
     async def read_file_lines(
@@ -179,8 +249,9 @@ def _setup_tools(self):
 ```python
 import json
 
-# 在 _setup_tools 方法中定义
-def _setup_tools(self):
+# 使用 @property 装饰器定义
+@property
+def setup_tools(self):
     @self.resource(
         uri="file://config.json",
         name="配置文件",
@@ -208,8 +279,9 @@ from mcp_framework.core.decorators import (
 )
 from typing import Annotated
 
-# 在 _setup_tools 方法中定义
-def _setup_tools(self):
+# 使用 @property 装饰器定义
+@property
+def setup_server_params(self):
     @self.decorators.server_param("api_key")
     async def api_key_param(
         param: Annotated[str, StringParam(
@@ -290,8 +362,9 @@ def _setup_tools(self):
 from mcp_framework.core.decorators import Required
 from typing import Annotated
 
-# 在 _setup_tools 方法中定义
-def _setup_tools(self):
+# 在 setup_tools 方法中定义
+@property
+def setup_tools(self):
     @self.tool("使用配置的工具")
     async def configured_tool(query: Annotated[str, Required("查询内容")]):
         # 获取配置值
@@ -319,8 +392,10 @@ def _setup_tools(self):
 **完整示例：**
 
 ```python
-# 1. 定义参数（在 _setup_tools 方法中）
-@self.decorators.server_param("enable_hidden_files")
+# 1. 定义参数（在 setup_server_params 方法中）
+@property
+def setup_server_params(self):
+    @self.decorators.server_param("enable_hidden_files")
 async def enable_hidden_files_param(
     param: Annotated[bool, BooleanParam(
         display_name="启用隐藏文件",
@@ -855,14 +930,14 @@ class MyMCPServer(EnhancedMCPServer):
             version="1.0.0",
             description="支持内置中间件的MCP服务器"
         )
-        self._setup_tools()
     
     async def initialize(self):
         """服务器初始化"""
         self.logger.info("服务器启动，内置中间件已自动配置")
         self.logger.info("CORS、错误处理、日志中间件已启用")
     
-    def _setup_tools(self):
+    @property
+    def setup_tools(self):
         @self.tool("测试工具")
         async def test_tool(message: str) -> str:
             """测试中间件功能的工具"""
@@ -931,14 +1006,14 @@ class MyMCPServer(EnhancedMCPServer):
             version="1.0.0",
             description="支持中间件的MCP服务器"
         )
-        self._setup_tools()
     
     async def initialize(self):
         """服务器初始化"""
         self.logger.info("服务器启动，中间件已自动配置")
         self.logger.info("CORS、错误处理、日志中间件已启用")
     
-    def _setup_tools(self):
+    @property
+    def setup_tools(self):
         @self.tool("测试工具")
         async def test_tool(message: str) -> str:
             """测试中间件功能的工具"""

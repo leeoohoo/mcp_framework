@@ -561,6 +561,13 @@ class EnhancedMCPServer(BaseMCPServer):
         self.add_resource(resource)
         self._resource_handlers[uri] = handler
 
+    async def initialize(self) -> None:
+        """初始化服务器"""
+        # 触发装饰器注册
+        if hasattr(self, 'decorators') and self.decorators is not None:
+            self.decorators.register_all()
+        self.logger.info(f"EnhancedMCPServer '{self.name}' initialized")
+
     async def handle_tool_call(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """自动分发工具调用到注册的处理函数"""
         # 首先检查普通工具处理器

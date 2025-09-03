@@ -137,7 +137,7 @@ class AnnotatedDecorators:
         self.registered_resources = {}
         self.server_parameters = []
 
-    def tool(self, description: str = None, chunk_size: int = 100):
+    def tool(self, description: str = None, chunk_size: int = 100, role: str = None):
         """工具装饰器（统一流式架构）"""
 
         def decorator(func):
@@ -157,6 +157,11 @@ class AnnotatedDecorators:
                 'input_schema': input_schema,
                 'chunk_size': chunk_size
             }
+            
+            # 添加role信息（如果提供）
+            if role is not None:
+                tool_dict['role'] = role
+                
             self.server.add_tool(tool_dict)
 
             # 如果是EnhancedMCPServer，也注册到_tool_handlers
@@ -171,7 +176,7 @@ class AnnotatedDecorators:
 
         return decorator
 
-    def streaming_tool(self, description: str = None, chunk_size: int = 50):
+    def streaming_tool(self, description: str = None, chunk_size: int = 50, role: str = None):
         """流式工具装饰器（注册为真正的流式处理器）"""
 
         def decorator(func):
@@ -191,6 +196,11 @@ class AnnotatedDecorators:
                 'input_schema': input_schema,
                 'chunk_size': chunk_size
             }
+            
+            # 添加role信息（如果提供）
+            if role is not None:
+                tool_dict['role'] = role
+                
             self.server.add_tool(tool_dict)
 
             # 如果是EnhancedMCPServer，注册到_stream_handlers（真正的流式处理）

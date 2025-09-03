@@ -62,6 +62,7 @@ class MCPHTTPServer:
         self.app.router.add_get('/info', self.api_handler.server_info)
         self.app.router.add_get('/metrics', self.api_handler.metrics)
         self.app.router.add_get('/version', self.api_handler.version_info)
+        self.app.router.add_get('/tools/list', self.api_handler.tools_list)
 
         # 配置管理路由
         self.app.router.add_get('/config', self.config_page_handler.serve_config_page)

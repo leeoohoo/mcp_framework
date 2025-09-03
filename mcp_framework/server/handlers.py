@@ -38,7 +38,7 @@ class MCPRequestHandler:
             if method == 'initialize':
                 result = await self.handle_initialize(params)
             elif method == 'tools/list':
-                result = await self.handle_tools_list()
+                result = await self.handle_tools_list(params)
             elif method == 'tools/call':
                 result = await self.handle_tool_call(params)
             elif method == 'resources/list':
@@ -83,11 +83,25 @@ class MCPRequestHandler:
             }
         }
 
-    async def handle_tools_list(self):
+    async def handle_tools_list(self, params=None):
         """处理工具列表请求"""
-        return {
-            'tools': self.mcp_server.tools
-        }
+        # 获取role参数
+        role = params.get('role') if params else None
+        
+        if role:
+            # 如果指定了role，返回匹配该role的工具和没有role的工具
+            filtered_tools = [
+                tool for tool in self.mcp_server.tools
+                if tool.get('role') == role or tool.get('role') is None
+            ]
+            return {
+                'tools': filtered_tools
+            }
+        else:
+            # 如果没有指定role，返回所有工具
+            return {
+                'tools': self.mcp_server.tools
+            }
 
     def _coerce_value(self, value, expected_type: str):
         """根据期望类型转换单个值"""
@@ -626,6 +640,26 @@ class APIHandler:
             'protocol_version': '2024-11-05',
             'features': ['tools', 'resources', 'streaming', 'sse']  # 新增特性列表
         })
+
+    async def tools_list(self, request):
+        """工具列表 - 支持role参数过滤"""
+        # 获取role查询参数
+        role = request.query.get('role')
+        
+        if role:
+            # 如果指定了role，返回匹配该role的工具和没有role的工具
+            filtered_tools = [
+                tool for tool in self.mcp_server.tools
+                if tool.get('role') == role or tool.get('role') is None
+            ]
+            return web.json_response({
+                'tools': filtered_tools
+            })
+        else:
+            # 如果没有指定role，返回所有工具
+            return web.json_response({
+                'tools': self.mcp_server.tools
+            })
 
     async def get_config(self, request):
         """获取配置"""
