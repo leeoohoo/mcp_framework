@@ -6,12 +6,12 @@ MCP HTTP 服务器请求处理器
 import logging
 from datetime import datetime
 from aiohttp import web
-from typing import Dict, Any
+from typing import Dict, Any, Union
 import json
 import asyncio
 
 from ..core.base import BaseMCPServer
-from ..core.config import ConfigManager
+from ..core.config import ConfigManager, ServerConfigAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class MCPRequestHandler:
     """MCP 请求处理器"""
 
-    def __init__(self, mcp_server: BaseMCPServer, config_manager: ConfigManager):
+    def __init__(self, mcp_server: BaseMCPServer, config_manager: Union[ConfigManager, ServerConfigAdapter]):
         self.mcp_server = mcp_server
         self.config_manager = config_manager
         self.start_time = datetime.now()
@@ -38,7 +38,7 @@ class MCPRequestHandler:
             if method == 'initialize':
                 result = await self.handle_initialize(params)
             elif method == 'tools/list':
-                result = await self.handle_tools_list()
+                result = await self.handle_tools_list(params)
             elif method == 'tools/call':
                 result = await self.handle_tool_call(params)
             elif method == 'resources/list':
@@ -83,11 +83,25 @@ class MCPRequestHandler:
             }
         }
 
-    async def handle_tools_list(self):
+    async def handle_tools_list(self, params=None):
         """处理工具列表请求"""
-        return {
-            'tools': self.mcp_server.tools
-        }
+        # 获取role参数
+        role = params.get('role') if params else None
+        
+        if role:
+            # 如果指定了role，返回匹配该role的工具和没有role的工具
+            filtered_tools = [
+                tool for tool in self.mcp_server.tools
+                if tool.get('role') == role or tool.get('role') is None
+            ]
+            return {
+                'tools': filtered_tools
+            }
+        else:
+            # 如果没有指定role，返回所有工具
+            return {
+                'tools': self.mcp_server.tools
+            }
 
     def _coerce_value(self, value, expected_type: str):
         """根据期望类型转换单个值"""
@@ -580,7 +594,7 @@ class SSEHandler:
 class APIHandler:
     """API 处理器"""
 
-    def __init__(self, mcp_server: BaseMCPServer, config_manager: ConfigManager):
+    def __init__(self, mcp_server: BaseMCPServer, config_manager: Union[ConfigManager, ServerConfigAdapter]):
         self.mcp_server = mcp_server
         self.config_manager = config_manager
         self.start_time = datetime.now()
@@ -627,6 +641,26 @@ class APIHandler:
             'features': ['tools', 'resources', 'streaming', 'sse']  # 新增特性列表
         })
 
+    async def tools_list(self, request):
+        """工具列表 - 支持role参数过滤"""
+        # 获取role查询参数
+        role = request.query.get('role')
+        
+        if role:
+            # 如果指定了role，返回匹配该role的工具和没有role的工具
+            filtered_tools = [
+                tool for tool in self.mcp_server.tools
+                if tool.get('role') == role or tool.get('role') is None
+            ]
+            return web.json_response({
+                'tools': filtered_tools
+            })
+        else:
+            # 如果没有指定role，返回所有工具
+            return web.json_response({
+                'tools': self.mcp_server.tools
+            })
+
     async def get_config(self, request):
         """获取配置"""
         config = self.config_manager.load_config()
@@ -639,6 +673,7 @@ class APIHandler:
 
             # 加载当前配置
             current_config = self.config_manager.load_config()
+            old_config_dict = current_config.to_dict()
 
             # 更新配置
             for key, value in data.items():
@@ -647,6 +682,11 @@ class APIHandler:
 
             # 保存配置
             if self.config_manager.save_config(current_config):
+                # 通知MCP服务器配置更新（如果配置项与服务器参数相关）
+                new_config_dict = current_config.to_dict()
+                if hasattr(self.mcp_server, '_notify_config_update'):
+                    self.mcp_server._notify_config_update(old_config_dict, new_config_dict)
+                
                 return web.json_response({
                     'success': True,
                     'message': 'Configuration updated successfully'

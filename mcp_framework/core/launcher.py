@@ -77,19 +77,36 @@ async def run_server(
         # 根据端口号创建专用的配置管理器
         port_config_manager = create_port_based_config_manager(server_name, config.port)
         
+        # 为服务器实例设置正确的配置管理器
+        server_instance.server_config_manager = port_config_manager
+        
         # 检查是否存在该端口的配置文件，如果不存在则创建
         if not port_config_manager.config_exists():
             print(f"📝 为端口 {config.port} 创建新的配置文件...")
-            port_config_manager.save_server_config(config.to_dict())
+            # 创建完整的默认配置，包含所有ServerConfig字段
+            default_config = config.to_dict()
+            port_config_manager.save_server_config(default_config)
             print(f"✅ 配置文件已创建: {port_config_manager.config_file}")
         else:
             print(f"📂 使用现有配置文件: {port_config_manager.config_file}")
             # 加载现有配置并合并命令行参数
             existing_config = port_config_manager.load_server_config()
-            # 命令行参数优先级更高
-            merged_config = {**existing_config, **{k: v for k, v in config.to_dict().items() if v is not None}}
+            
+            # 先用ServerConfig默认值作为基础，确保所有必需字段都存在
+            default_config = config.to_dict()
+            # 然后用现有配置覆盖（保留用户自定义字段）
+            merged_config = {**default_config, **existing_config}
+            # 最后用命令行参数覆盖（命令行参数优先级最高）
+            merged_config.update({k: v for k, v in config.to_dict().items() if v is not None})
+            
             from .config import ServerConfig
             config = ServerConfig.from_dict(merged_config)
+            
+            # 保存合并后的完整配置，确保配置文件包含所有必需字段
+            port_config_manager.save_server_config(merged_config)
+            
+            # 配置服务器实例，使用合并后的配置
+            server_instance.configure_server(merged_config)
 
         # 初始化服务器
         print(f"🔧 初始化 {server_name}...")
@@ -100,8 +117,12 @@ async def run_server(
             print(f"⚠️  初始化警告: {e}")
             print("💡 某些功能可能需要通过配置页面设置后重启服务器")
 
-        # 创建 HTTP 服务器
-        http_server = MCPHTTPServer(server_instance, config)
+        # 创建适配器，将ServerConfigManager包装为ConfigManager接口
+        from .config import ServerConfigAdapter
+        config_adapter = ServerConfigAdapter(port_config_manager)
+        
+        # 创建 HTTP 服务器，使用正确的配置管理器
+        http_server = MCPHTTPServer(server_instance, config, config_adapter)
 
         print(f"🚀 {server_name} 启动中...")
         print(f"📍 服务器地址: http://{config.host}:{config.port}")

@@ -32,18 +32,17 @@ class BaseMCPServer(ABC):
         # 服务器运行时配置
         self.server_config: Dict[str, Any] = {}
 
-        # 添加配置管理器
-        self.server_config_manager = ServerConfigManager(name)
+        # 注意：不在这里创建配置管理器，因为它应该由启动器根据端口创建
+        # 这避免了创建没有端口号的默认配置文件
+        self.server_config_manager = None
 
         # 流式停止管理
         self._streaming_sessions: Set[str] = set()  # 活跃的流式会话ID
         self._stop_streaming: bool = False  # 全局停止标志
         self._session_stop_flags: Dict[str, bool] = {}  # 单个会话停止标志
 
-        # 尝试加载已保存的配置
-        saved_config = self.server_config_manager.load_server_config()
-        if saved_config:
-            self.configure_server(saved_config)
+        # 配置更新回调机制
+        self._config_update_callbacks: List[Callable[[Dict[str, Any], Dict[str, Any]], None]] = []
 
     @abstractmethod
     async def initialize(self) -> None:
@@ -55,10 +54,9 @@ class BaseMCPServer(ABC):
         """处理工具调用，子类必须实现"""
         pass
 
-    @abstractmethod
     def get_server_parameters(self) -> List[ServerParameter]:
-        """获取服务器配置参数定义，子类必须实现"""
-        pass
+        """获取服务器配置参数定义，子类可以重写"""
+        return []
 
     async def handle_resource_request(self, uri: str) -> Dict[str, Any]:
         """处理资源请求，子类可以重写"""
@@ -328,6 +326,9 @@ class BaseMCPServer(ABC):
     def configure_server(self, config: Dict[str, Any]) -> bool:
         """配置服务器参数"""
         try:
+            # 保存旧配置用于回调通知
+            old_config = self.server_config.copy()
+            
             # 验证配置参数
             parameters = self.get_server_parameters()
             param_dict = {p.name: p for p in parameters}
@@ -359,6 +360,10 @@ class BaseMCPServer(ABC):
             # 保存配置
             if self.server_config_manager.save_server_config(self.server_config):
                 self.logger.info(f"Server configured and saved: {self.server_config}")
+                
+                # 通知配置更新回调
+                self._notify_config_update(old_config, self.server_config.copy())
+                
                 return True
             else:
                 self.logger.error("Failed to save server configuration")
@@ -371,6 +376,30 @@ class BaseMCPServer(ABC):
     def get_config_value(self, key: str, default=None):
         """获取配置值"""
         return self.server_config.get(key, default)
+
+    def register_config_update_callback(self, callback: Callable[[Dict[str, Any], Dict[str, Any]], None]) -> None:
+        """注册配置更新回调函数
+        
+        Args:
+            callback: 回调函数，接收两个参数：(old_config, new_config)
+        """
+        if callback not in self._config_update_callbacks:
+            self._config_update_callbacks.append(callback)
+            self.logger.info(f"Registered config update callback: {callback.__name__}")
+
+    def unregister_config_update_callback(self, callback: Callable[[Dict[str, Any], Dict[str, Any]], None]) -> None:
+        """取消注册配置更新回调函数"""
+        if callback in self._config_update_callbacks:
+            self._config_update_callbacks.remove(callback)
+            self.logger.info(f"Unregistered config update callback: {callback.__name__}")
+
+    def _notify_config_update(self, old_config: Dict[str, Any], new_config: Dict[str, Any]) -> None:
+        """通知所有注册的回调函数配置已更新"""
+        for callback in self._config_update_callbacks:
+            try:
+                callback(old_config, new_config)
+            except Exception as e:
+                self.logger.error(f"Error in config update callback {callback.__name__}: {e}")
 
     def add_tool(self, tool: dict) -> None:
         """添加工具（去重：同名工具将被替换而不是重复添加）"""
@@ -532,6 +561,13 @@ class EnhancedMCPServer(BaseMCPServer):
         self.add_resource(resource)
         self._resource_handlers[uri] = handler
 
+    async def initialize(self) -> None:
+        """初始化服务器"""
+        # 触发装饰器注册
+        if hasattr(self, 'decorators') and self.decorators is not None:
+            self.decorators.register_all()
+        self.logger.info(f"EnhancedMCPServer '{self.name}' initialized")
+
     async def handle_tool_call(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """自动分发工具调用到注册的处理函数"""
         # 首先检查普通工具处理器
@@ -660,6 +696,12 @@ class EnhancedMCPServer(BaseMCPServer):
 
     def get_server_parameters(self) -> List[ServerParameter]:
         """获取服务器参数定义，支持装饰器配置"""
+        # 触发装饰器注册（如果有 setup_tools 或 setup_server_params 属性）
+        if hasattr(self, 'setup_tools'):
+            _ = self.setup_tools
+        if hasattr(self, 'setup_server_params'):
+            _ = self.setup_server_params
+        
         # 合并装饰器配置的参数和子类定义的参数
         # 检查 decorators 是否已初始化
         decorator_params = []

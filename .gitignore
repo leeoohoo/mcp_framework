@@ -28,3 +28,9 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+/data
+/logs
+/docs
+/config
+/docs
+/docs

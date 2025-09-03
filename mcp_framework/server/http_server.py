@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class MCPHTTPServer:
     """通用 MCP HTTP 服务器"""
 
-    def __init__(self, mcp_server: BaseMCPServer, config: ServerConfig):
+    def __init__(self, mcp_server: BaseMCPServer, config: ServerConfig, config_manager = None):
         self.mcp_server = mcp_server
         self.config = config
         self.host = config.host
@@ -29,7 +29,10 @@ class MCPHTTPServer:
         self.app = web.Application()
         self.logger = logging.getLogger(f"{__name__}.MCPHTTPServer")
         self.start_time = datetime.now()
-        self.config_manager = ConfigManager()
+        # 使用传入的配置管理器，必须提供有效的配置管理器
+        if config_manager is None:
+            raise ValueError("config_manager is required and cannot be None")
+        self.config_manager = config_manager
 
         # 初始化处理器
         self.mcp_handler = MCPRequestHandler(mcp_server, self.config_manager)
@@ -59,6 +62,7 @@ class MCPHTTPServer:
         self.app.router.add_get('/info', self.api_handler.server_info)
         self.app.router.add_get('/metrics', self.api_handler.metrics)
         self.app.router.add_get('/version', self.api_handler.version_info)
+        self.app.router.add_get('/tools/list', self.api_handler.tools_list)
 
         # 配置管理路由
         self.app.router.add_get('/config', self.config_page_handler.serve_config_page)

@@ -31,7 +31,8 @@ from .core.config import (
     ServerConfig,
     ServerParameter,
     ConfigManager,
-    ServerConfigManager
+    ServerConfigManager,
+    ServerConfigAdapter
 )
 
 from .core.launcher import (
@@ -76,6 +77,7 @@ __all__ = [
     'ServerParameter',
     'ConfigManager',
     'ServerConfigManager',
+    'ServerConfigAdapter',
     
     # 启动器
     'run_server',
