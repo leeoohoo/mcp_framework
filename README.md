@@ -2,7 +2,7 @@
 
 一个强大且易用的 MCP (Model Context Protocol) 服务器开发框架，支持快速构建、部署和管理 MCP 服务器。
 
-使用该框架开发的mcp_servers: https://gitee.com/wmjsoft_admin/mcp-servers
+使用该框架开发的mcp_servers: https://github.com/leeoohoo/mcp_servers
 
 ## 🚀 特性
 
