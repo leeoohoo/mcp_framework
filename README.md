@@ -132,6 +132,333 @@ if __name__ == "__main__":
 python my_server.py --port 8080 --host localhost
 ```
 
+## 🌐 Flask 项目集成
+
+### 概述
+
+MCP Framework 可以无缝集成到现有的 Flask 项目中，实现传统 REST API 和 AI 友好的 MCP 工具并存的架构。这种设计允许你的 Flask 应用同时为 Web 前端和 AI 代理提供服务。
+
+### 集成特点
+
+- **双重接口设计**: 同一业务逻辑支持 REST API 和 MCP 工具两种访问方式
+- **代码复用**: 核心业务逻辑只需实现一次
+- **架构清晰**: 服务层、路由层分离，易于维护
+- **AI 友好**: 自动为 AI 代理提供工具接口
+- **向后兼容**: 不影响现有 Flask 应用
+
+### 项目结构
+
+```
+flask_project/
+├── app/
+│   ├── __init__.py              # Flask应用工厂
+│   ├── mcp_config.py            # MCP服务器配置
+│   ├── services/
+│   │   ├── __init__.py
+│   │   ├── user_service.py      # 用户服务 + MCP工具
+│   │   └── product_service.py   # 产品服务 + MCP工具
+│   └── routes/
+│       ├── __init__.py
+│       └── api.py               # Flask REST API路由
+├── run.py                       # 主启动文件
+├── requirements.txt             # 项目依赖
+└── README.md                    # 项目说明
+```
+
+### 集成步骤
+
+#### 1. 安装依赖
+
+```bash
+pip install mcp-framework flask
+```
+
+#### 2. 创建 MCP 配置文件
+
+创建 `app/mcp_config.py`：
+
+```python
+#!/usr/bin/env python3
+from mcp_framework import EnhancedMCPServer
+from typing import Annotated
+from mcp_framework.core.decorators import Required
+
+class FlaskIntegratedMCPServer(EnhancedMCPServer):
+    """Flask集成的MCP服务器"""
+    
+    def __init__(self, user_service=None, product_service=None):
+        super().__init__(
+            name="flask-integrated-mcp-server",
+            version="1.0.0",
+            description="Flask应用集成的MCP服务器"
+        )
+        self.user_service = user_service
+        self.product_service = product_service
+    
+    async def initialize(self):
+        """初始化服务器"""
+        self.logger.info("Flask集成MCP服务器初始化完成")
+    
+    def set_services(self, user_service, product_service):
+        """设置服务实例"""
+        self.user_service = user_service
+        self.product_service = product_service
+```
+
+#### 3. 创建服务层
+
+创建 `app/services/user_service.py`：
+
+```python
+#!/usr/bin/env python3
+import time
+from typing import Dict, List, Any, Annotated
+from mcp_framework.core.decorators import Required
+
+class UserService:
+    """用户服务类"""
+    
+    def __init__(self, mcp_server):
+        self.mcp_server = mcp_server
+        self.users_db = {}  # 模拟数据库
+        self._init_sample_data()
+        self._register_mcp_tools()
+    
+    def _init_sample_data(self):
+        """初始化示例数据"""
+        self.users_db = {
+            1: {"id": 1, "name": "张三", "email": "zhang@example.com", "role": "admin"},
+            2: {"id": 2, "name": "李四", "email": "li@example.com", "role": "user"}
+        }
+    
+    def _register_mcp_tools(self):
+        """注册MCP工具"""
+        
+        @self.mcp_server.tool("获取用户信息")
+        async def get_user_info(
+            user_id: Annotated[int, Required("用户ID，必须是正整数")]
+        ) -> Dict[str, Any]:
+            """根据用户ID获取用户详细信息"""
+            user = self.get_user_by_id(user_id)
+            if user:
+                return {
+                    "success": True,
+                    "user": user,
+                    "timestamp": time.time()
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"用户 {user_id} 不存在",
+                    "timestamp": time.time()
+                }
+        
+        @self.mcp_server.tool("获取所有用户")
+        async def get_all_users() -> Dict[str, Any]:
+            """获取所有用户列表"""
+            return {
+                "success": True,
+                "users": list(self.users_db.values()),
+                "total": len(self.users_db),
+                "timestamp": time.time()
+            }
+    
+    # Flask服务方法（非MCP工具）
+    def get_user_by_id(self, user_id: int) -> Dict[str, Any]:
+        """Flask路由使用的方法"""
+        return self.users_db.get(user_id)
+    
+    def get_all_users_list(self) -> List[Dict[str, Any]]:
+        """Flask路由使用的方法"""
+        return list(self.users_db.values())
+```
+
+#### 4. 创建 Flask 应用工厂
+
+创建 `app/__init__.py`：
+
+```python
+#!/usr/bin/env python3
+from flask import Flask
+from .mcp_config import FlaskIntegratedMCPServer
+from .services.user_service import UserService
+from .services.product_service import ProductService
+from .routes.api import api_bp
+
+def create_app():
+    """Flask应用工厂"""
+    app = Flask(__name__)
+    
+    # 创建MCP服务器实例
+    mcp_server = FlaskIntegratedMCPServer()
+    
+    # 创建服务实例
+    user_service = UserService(mcp_server)
+    product_service = ProductService(mcp_server)
+    
+    # 设置服务到MCP服务器
+    mcp_server.set_services(user_service, product_service)
+    
+    # 将服务实例添加到Flask应用上下文
+    app.user_service = user_service
+    app.product_service = product_service
+    app.mcp_server = mcp_server
+    
+    # 注册蓝图
+    app.register_blueprint(api_bp, url_prefix='/api')
+    
+    @app.route('/')
+    def index():
+        return {
+            "message": "Flask + MCP Framework 集成示例",
+            "flask_api": "http://localhost:5001/api",
+            "mcp_server": "http://localhost:8080",
+            "endpoints": {
+                "users": "/api/users",
+                "products": "/api/products",
+                "mcp_tools": "http://localhost:8080/tools/list"
+            }
+        }
+    
+    return app
+```
+
+#### 5. 创建 Flask 路由
+
+创建 `app/routes/api.py`：
+
+```python
+#!/usr/bin/env python3
+from flask import Blueprint, jsonify, request, current_app
+
+api_bp = Blueprint('api', __name__)
+
+@api_bp.route('/users', methods=['GET'])
+def get_users():
+    """获取所有用户"""
+    users = current_app.user_service.get_all_users_list()
+    return jsonify({"users": users, "total": len(users)})
+
+@api_bp.route('/users/<int:user_id>', methods=['GET'])
+def get_user(user_id):
+    """获取单个用户"""
+    user = current_app.user_service.get_user_by_id(user_id)
+    if user:
+        return jsonify({"user": user})
+    else:
+        return jsonify({"error": "用户不存在"}), 404
+
+@api_bp.route('/products', methods=['GET'])
+def get_products():
+    """获取产品列表"""
+    category = request.args.get('category', 'all')
+    if category == 'all':
+        products = current_app.product_service.get_all_products()
+    else:
+        products = [p for p in current_app.product_service.get_all_products() 
+                   if p.get('category') == category]
+    return jsonify({"products": products, "total": len(products)})
+```
+
+#### 6. 创建启动文件
+
+创建 `run.py`：
+
+```python
+#!/usr/bin/env python3
+import threading
+import time
+from app import create_app
+from mcp_framework import run_server_main
+
+def run_flask_app():
+    """运行Flask应用"""
+    app = create_app()
+    app.run(host='0.0.0.0', port=5001, debug=False, use_reloader=False)
+
+def run_mcp_server():
+    """运行MCP服务器"""
+    app = create_app()
+    mcp_server = app.mcp_server
+    
+    run_server_main(
+        server_instance=mcp_server,
+        server_name="flask-integrated-mcp-server",
+        default_port=8080
+    )
+
+if __name__ == "__main__":
+    print("启动 Flask + MCP 集成服务...")
+    
+    # 在单独线程中启动Flask应用
+    flask_thread = threading.Thread(target=run_flask_app, daemon=True)
+    flask_thread.start()
+    
+    # 等待Flask启动
+    time.sleep(2)
+    print("Flask API 已启动: http://localhost:5001")
+    
+    # 在主线程中启动MCP服务器
+    print("启动 MCP 服务器: http://localhost:8080")
+    run_mcp_server()
+```
+
+### 使用示例
+
+#### Flask REST API 调用
+
+```bash
+# 获取所有用户
+curl http://localhost:5001/api/users
+
+# 获取单个用户
+curl http://localhost:5001/api/users/1
+
+# 获取产品列表
+curl http://localhost:5001/api/products
+
+# 按分类获取产品
+curl "http://localhost:5001/api/products?category=electronics"
+```
+
+#### MCP 工具调用
+
+```bash
+# 获取可用工具列表
+curl http://localhost:8080/tools/list
+
+# 调用用户相关工具
+curl -X POST http://localhost:8080/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "get_user_info", "arguments": {"user_id": 1}}}'
+
+# 调用产品相关工具
+curl -X POST http://localhost:8080/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "get_products_list", "arguments": {"category": "electronics"}}}'
+```
+
+### 集成优势
+
+1. **代码复用**: 同一业务逻辑支持多种访问方式
+2. **架构清晰**: 服务层、路由层分离，职责明确
+3. **易于扩展**: 新增功能只需在服务层实现
+4. **AI 友好**: 自动为 AI 代理提供工具接口
+5. **向后兼容**: 不影响现有 Flask 应用的功能
+6. **双重服务**: Web 应用和 AI 代理可以共享同一套业务逻辑
+
+### 注意事项
+
+1. **端口管理**: 确保 Flask 和 MCP 服务器使用不同端口
+2. **线程安全**: 注意共享数据的线程安全性
+3. **错误处理**: 在生产环境中完善错误处理机制
+4. **性能优化**: 根据需要添加缓存和连接池
+5. **安全考虑**: 在生产环境中添加认证和授权
+
+### 完整示例
+
+完整的 Flask 集成示例项目可以在 `flask_project_structure_example/` 目录中找到，包含了完整的项目结构、配置文件和详细的使用说明。
+
 ## 📚 详细文档
 
 ### 装饰器 API
@@ -1092,19 +1419,59 @@ if __name__ == "__main__":
 
 ### 🧪 测试服务器开发模式
 
-框架还支持一种快速测试和原型开发的模式，如 `test_multi_role_server.py` 所示：
+框架支持两种快速测试和原型开发的模式：
+
+#### 方式一：直接装饰器模式（推荐）
 
 ```python
 #!/usr/bin/env python3
-"""
-多角色支持测试服务器
-测试role参数支持数组格式的功能
-"""
-
-import asyncio
-from typing_extensions import Annotated
+from mcp_framework import EnhancedMCPServer, run_server_main
 from mcp_framework.core.decorators import Required
-from mcp_framework.core.base import EnhancedMCPServer
+from typing_extensions import Annotated
+
+# 直接创建服务器实例
+server = EnhancedMCPServer(
+    name="multi-role-test-server",
+    version="1.0.0",
+    description="测试多角色功能的MCP服务器"
+)
+
+# 直接使用装饰器，无需setup_tools包装
+@server.tool("规划任务", role="planner")
+async def plan_task(task: Annotated[str, Required("要规划的任务")]):
+    """规划任务 - 仅限planner角色"""
+    return f"任务规划: {task}\n步骤: 1.分析需求 2.制定计划 3.分配资源"
+
+@server.tool("执行任务", role=["executor", "manager"])
+async def execute_task(task: Annotated[str, Required("要执行的任务")]):
+    """执行任务 - executor和manager角色都可以使用"""
+    return f"正在执行任务: {task}\n状态: 进行中\n预计完成时间: 30分钟"
+
+@server.tool("获取状态")
+async def get_status():
+    """获取服务器状态 - 所有角色都可以使用"""
+    return "服务器运行正常，所有功能可用"
+
+if __name__ == "__main__":
+    print(f"启动多角色测试服务器...")
+    print(f"测试角色过滤:")
+    print(f"- 获取planner角色工具: curl 'http://localhost:8080/tools/list?role=planner'")
+    print(f"- 获取executor角色工具: curl 'http://localhost:8080/tools/list?role=executor'")
+    
+    run_server_main(
+        server_instance=server,
+        server_name="MultiRoleTestServer",
+        default_port=8080
+    )
+```
+
+#### 方式二：setup_tools包装模式（兼容性）
+
+```python
+#!/usr/bin/env python3
+from mcp_framework import EnhancedMCPServer, run_server_main
+from mcp_framework.core.decorators import Required
+from typing_extensions import Annotated
 
 # 直接创建服务器实例
 server = EnhancedMCPServer(
@@ -1137,8 +1504,6 @@ def setup_tools(self):
 server.setup_tools = setup_tools.__get__(server, EnhancedMCPServer)
 
 if __name__ == "__main__":
-    from mcp_framework import run_server_main
-    
     print(f"启动多角色测试服务器...")
     print(f"测试角色过滤:")
     print(f"- 获取planner角色工具: curl 'http://localhost:8080/tools/list?role=planner'")
@@ -1161,20 +1526,22 @@ if __name__ == "__main__":
 
 **开发模式对比：**
 
-| 特性 | 类继承模式 | 测试服务器模式 |
-|------|------------|----------------|
-| **代码结构** | 继承 `EnhancedMCPServer` | 直接实例化服务器 |
-| **工具定义** | 在类内部使用 `@property` | 外部定义后绑定 |
-| **适用场景** | 生产环境、复杂应用 | 测试、原型、演示 |
-| **代码复用** | 高（可继承扩展） | 低（独立脚本） |
-| **开发速度** | 中等 | 快速 |
-| **维护性** | 高 | 中等 |
+| 特性 | 类继承模式 | 直接装饰器模式 | setup_tools模式 |
+|------|------------|----------------|------------------|
+| **代码结构** | 继承 `EnhancedMCPServer` | 直接实例化+装饰器 | 实例化+方法绑定 |
+| **工具定义** | 在类内部使用 `@property` | 直接使用 `@server.tool` | 外部定义后绑定 |
+| **适用场景** | 生产环境、复杂应用 | 测试、原型、演示 | 兼容性需求 |
+| **代码复用** | 高（可继承扩展） | 低（独立脚本） | 低（独立脚本） |
+| **开发速度** | 中等 | 最快 | 快速 |
+| **维护性** | 高 | 中等 | 中等 |
+| **推荐程度** | 生产环境首选 | 测试开发首选 | 兼容性场景 |
 
 **使用建议：**
 - ✅ **生产环境**: 使用类继承模式，便于维护和扩展
-- ✅ **快速测试**: 使用测试服务器模式，快速验证想法
-- ✅ **功能演示**: 使用测试服务器模式，代码简洁直观
-- ✅ **学习框架**: 从测试服务器模式开始，理解框架基本概念
+- ✅ **快速测试**: 使用直接装饰器模式，代码最简洁
+- ✅ **功能演示**: 使用直接装饰器模式，代码直观易懂
+- ✅ **学习框架**: 从直接装饰器模式开始，理解框架基本概念
+- ✅ **兼容性需求**: 使用setup_tools模式，保持与旧版本兼容
 
 **测试角色过滤功能：**
 

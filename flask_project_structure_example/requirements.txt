@@ -1,0 +1,28 @@
+# Flask + MCP Framework 集成项目依赖
+
+# Flask核心
+Flask>=2.3.0
+Werkzeug>=2.3.0
+
+# MCP Framework
+mcp-framework>=0.1.1
+
+# 异步支持
+aiohttp>=3.8.0
+aiofiles>=23.0.0
+
+# 数据验证
+pydantic>=2.0.0
+
+# 命令行工具
+click>=8.0.0
+
+# 系统工具
+colorama>=0.4.6
+psutil>=5.9.0
+
+# 开发依赖（可选）
+# pytest>=7.0.0
+# pytest-asyncio>=0.21.0
+# black>=22.0.0
+# flake8>=4.0.0
