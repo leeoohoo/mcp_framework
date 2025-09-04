@@ -147,14 +147,19 @@ def setup_tools(self):
     async def my_tool(param1: str, param2: int) -> str:
         return f"处理结果: {param1} - {param2}"
     
-    # 带角色的工具（用于多角色系统）
+    # 单角色工具
     @self.tool("规划任务", role="planner")
     async def plan_task(task: str) -> str:
         return f"任务规划: {task}"
     
-    @self.tool("执行任务", role="executor")
+    # 多角色工具（支持数组格式）
+    @self.tool("执行任务", role=["executor", "manager"])
     async def execute_task(task: str) -> str:
         return f"执行任务: {task}"
+    
+    @self.tool("审核任务", role=["manager", "supervisor", "admin"])
+    async def review_task(task: str) -> str:
+        return f"审核任务: {task}"
     
     # 通用工具（无角色限制）
     @self.tool("获取状态")
@@ -168,21 +173,48 @@ def setup_tools(self):
             yield f"处理步骤 {i}: {query}"
             await asyncio.sleep(0.1)
     
-    # 带角色的流式工具
+    # 单角色流式工具
     @self.streaming_tool("分析数据流", role="analyst")
     async def analyze_data_stream(data: str):
         for step in ["预处理", "分析", "总结"]:
             yield f"{step}: {data}"
             await asyncio.sleep(0.5)
+    
+    # 多角色流式工具
+    @self.streaming_tool("监控进度", role=["manager", "supervisor"])
+    async def monitor_progress(project: str):
+        for stage in ["初始化", "执行中", "完成"]:
+            yield f"项目 {project} - {stage}"
+            await asyncio.sleep(0.3)
 ```
 
 #### 角色过滤功能
 
-框架支持为工具指定角色（role），实现基于角色的工具过滤：
+框架支持为工具指定角色（role），实现基于角色的工具过滤和访问控制：
 
 **装饰器参数**：
-- `role`: 可选参数，指定工具的角色标识
-- 不指定 `role` 的工具为通用工具，对所有角色可见
+- `role`: 可选参数，支持以下格式：
+  - 单个角色：`role="planner"`
+  - 多个角色：`role=["executor", "manager"]`
+  - 不指定 `role` 的工具为通用工具，对所有角色可见
+
+**角色配置示例**：
+```python
+# 单角色工具
+@self.tool("规划任务", role="planner")
+async def plan_task(task: str):
+    return f"任务规划: {task}"
+
+# 多角色工具 - executor和manager都可以使用
+@self.tool("执行任务", role=["executor", "manager"])
+async def execute_task(task: str):
+    return f"执行任务: {task}"
+
+# 通用工具 - 所有角色都可以使用
+@self.tool("获取状态")
+async def get_status():
+    return "服务器运行正常"
+```
 
 **API 调用**：
 ```bash
@@ -199,9 +231,28 @@ curl -X POST -H "Content-Type: application/json" \
 ```
 
 **过滤规则**：
-- 指定角色时：返回匹配该角色的工具 + 通用工具（无角色）
+- 指定角色时：返回包含该角色的工具 + 通用工具（无角色）
+  - 单角色工具：`role="planner"` 只对 planner 角色可见
+  - 多角色工具：`role=["executor", "manager"]` 对 executor 和 manager 角色都可见
+  - 通用工具：无 `role` 参数的工具对所有角色可见
 - 不指定角色时：返回所有工具
 - 支持 HTTP API 和 MCP 协议两种调用方式
+
+**示例场景**：
+```python
+# 假设有以下工具配置：
+@self.tool("规划任务", role="planner")           # 只有 planner 可见
+@self.tool("执行任务", role=["executor", "manager"])  # executor 和 manager 可见
+@self.tool("获取状态")                          # 所有角色可见
+
+# 当请求 role="executor" 时，返回：
+# - 执行任务（因为 executor 在角色列表中）
+# - 获取状态（通用工具）
+
+# 当请求 role="manager" 时，返回：
+# - 执行任务（因为 manager 在角色列表中）
+# - 获取状态（通用工具）
+```
 
 #### 参数类型注解
 
@@ -1038,6 +1089,109 @@ if __name__ == "__main__":
 - `examples/weather_server.py` - 天气服务器示例
 - `examples/file_manager.py` - 文件管理服务器
 - `examples/ai_assistant.py` - AI 助手服务器
+
+### 🧪 测试服务器开发模式
+
+框架还支持一种快速测试和原型开发的模式，如 `test_multi_role_server.py` 所示：
+
+```python
+#!/usr/bin/env python3
+"""
+多角色支持测试服务器
+测试role参数支持数组格式的功能
+"""
+
+import asyncio
+from typing_extensions import Annotated
+from mcp_framework.core.decorators import Required
+from mcp_framework.core.base import EnhancedMCPServer
+
+# 直接创建服务器实例
+server = EnhancedMCPServer(
+    name="multi-role-test-server",
+    version="1.0.0",
+    description="测试多角色功能的MCP服务器"
+)
+
+@property
+def setup_tools(self):
+    # 单角色工具
+    @self.tool("规划任务", role="planner")
+    async def plan_task(task: Annotated[str, Required("要规划的任务")]):
+        """规划任务 - 仅限planner角色"""
+        return f"任务规划: {task}\n步骤: 1.分析需求 2.制定计划 3.分配资源"
+    
+    # 多角色工具 - 使用数组
+    @self.tool("执行任务", role=["executor", "manager"])
+    async def execute_task(task: Annotated[str, Required("要执行的任务")]):
+        """执行任务 - executor和manager角色都可以使用"""
+        return f"正在执行任务: {task}\n状态: 进行中\n预计完成时间: 30分钟"
+    
+    # 通用工具（无角色限制）
+    @self.tool("获取状态")
+    async def get_status():
+        """获取服务器状态 - 所有角色都可以使用"""
+        return "服务器运行正常，所有功能可用"
+
+# 绑定setup_tools方法到服务器
+server.setup_tools = setup_tools.__get__(server, EnhancedMCPServer)
+
+if __name__ == "__main__":
+    from mcp_framework import run_server_main
+    
+    print(f"启动多角色测试服务器...")
+    print(f"测试角色过滤:")
+    print(f"- 获取planner角色工具: curl 'http://localhost:8080/tools/list?role=planner'")
+    print(f"- 获取executor角色工具: curl 'http://localhost:8080/tools/list?role=executor'")
+    
+    run_server_main(
+        server_instance=server,
+        server_name="MultiRoleTestServer",
+        default_port=8080
+    )
+```
+
+#### 测试服务器开发模式特点
+
+**适用场景：**
+- 🧪 **快速原型开发**: 测试新功能和概念验证
+- 🔍 **功能验证**: 验证特定功能（如多角色支持）
+- 📊 **性能测试**: 创建专门的测试服务器
+- 🎯 **单一功能演示**: 专注展示某个特定功能
+
+**开发模式对比：**
+
+| 特性 | 类继承模式 | 测试服务器模式 |
+|------|------------|----------------|
+| **代码结构** | 继承 `EnhancedMCPServer` | 直接实例化服务器 |
+| **工具定义** | 在类内部使用 `@property` | 外部定义后绑定 |
+| **适用场景** | 生产环境、复杂应用 | 测试、原型、演示 |
+| **代码复用** | 高（可继承扩展） | 低（独立脚本） |
+| **开发速度** | 中等 | 快速 |
+| **维护性** | 高 | 中等 |
+
+**使用建议：**
+- ✅ **生产环境**: 使用类继承模式，便于维护和扩展
+- ✅ **快速测试**: 使用测试服务器模式，快速验证想法
+- ✅ **功能演示**: 使用测试服务器模式，代码简洁直观
+- ✅ **学习框架**: 从测试服务器模式开始，理解框架基本概念
+
+**测试角色过滤功能：**
+
+```bash
+# 启动测试服务器
+python test_multi_role_server.py
+
+# 测试不同角色的工具过滤
+curl 'http://localhost:8080/tools/list?role=planner' | jq
+curl 'http://localhost:8080/tools/list?role=executor' | jq
+curl 'http://localhost:8080/tools/list?role=manager' | jq
+
+# 获取所有工具
+curl 'http://localhost:8080/tools/list' | jq
+```
+
+这种开发模式特别适合快速验证框架功能、创建演示脚本或进行功能测试。
 
 ## 🤝 贡献
 
