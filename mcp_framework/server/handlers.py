@@ -90,10 +90,18 @@ class MCPRequestHandler:
         
         if role:
             # 如果指定了role，返回匹配该role的工具和没有role的工具
-            filtered_tools = [
-                tool for tool in self.mcp_server.tools
-                if tool.get('role') == role or tool.get('role') is None
-            ]
+            filtered_tools = []
+            for tool in self.mcp_server.tools:
+                # 检查新的roles数组格式
+                if 'roles' in tool and tool['roles']:
+                    if role in tool['roles']:
+                        filtered_tools.append(tool)
+                # 向后兼容：检查旧的role格式
+                elif tool.get('role') == role:
+                    filtered_tools.append(tool)
+                # 没有角色限制的工具（通用工具）
+                elif tool.get('role') is None and tool.get('roles') is None:
+                    filtered_tools.append(tool)
             return {
                 'tools': filtered_tools
             }
@@ -648,10 +656,18 @@ class APIHandler:
         
         if role:
             # 如果指定了role，返回匹配该role的工具和没有role的工具
-            filtered_tools = [
-                tool for tool in self.mcp_server.tools
-                if tool.get('role') == role or tool.get('role') is None
-            ]
+            filtered_tools = []
+            for tool in self.mcp_server.tools:
+                # 检查新的roles数组格式
+                if 'roles' in tool and tool['roles']:
+                    if role in tool['roles']:
+                        filtered_tools.append(tool)
+                # 向后兼容：检查旧的role格式
+                elif tool.get('role') == role:
+                    filtered_tools.append(tool)
+                # 没有角色限制的工具（通用工具）
+                elif tool.get('role') is None and tool.get('roles') is None:
+                    filtered_tools.append(tool)
             return web.json_response({
                 'tools': filtered_tools
             })

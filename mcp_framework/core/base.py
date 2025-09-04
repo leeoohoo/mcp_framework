@@ -729,24 +729,19 @@ class EnhancedMCPServer(BaseMCPServer):
 
         return unique_params
 
-    # 提供装饰器访问
-    @property
-    def tool(self):
+    # 提供装饰器直接访问
+    def tool(self, description: str = None, chunk_size: int = 100, role = None):
         """工具装饰器"""
-        return self.decorators.tool
+        return self.decorators.tool(description=description, chunk_size=chunk_size, role=role)
 
-
-    @property
-    def streaming_tool(self):
+    def streaming_tool(self, description: str = None, chunk_size: int = 50, role = None):
         """流式工具装饰器"""
-        return self.decorators.streaming_tool
+        return self.decorators.streaming_tool(description=description, chunk_size=chunk_size, role=role)
 
-    @property
-    def resource(self):
+    def resource(self, uri: str, name: str = None, description: str = None, mime_type: str = 'text/plain'):
         """资源装饰器"""
-        return self.decorators.resource
+        return self.decorators.resource(uri=uri, name=name, description=description, mime_type=mime_type)
 
-    @property
-    def server_param(self):
+    def server_param(self, name: str):
         """服务器参数装饰器"""
-        return self.decorators.server_param
+        return self.decorators.server_param(name=name)

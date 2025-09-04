@@ -137,7 +137,7 @@ class AnnotatedDecorators:
         self.registered_resources = {}
         self.server_parameters = []
 
-    def tool(self, description: str = None, chunk_size: int = 100, role: str = None):
+    def tool(self, description: str = None, chunk_size: int = 100, role: Union[str, List[str]] = None):
         """工具装饰器（统一流式架构）"""
 
         def decorator(func):
@@ -160,7 +160,15 @@ class AnnotatedDecorators:
             
             # 添加role信息（如果提供）
             if role is not None:
-                tool_dict['role'] = role
+                # 支持单个角色或角色数组
+                if isinstance(role, str):
+                    tool_dict['roles'] = [role]
+                elif isinstance(role, list):
+                    tool_dict['roles'] = role
+                else:
+                    raise ValueError(f"role参数必须是字符串或字符串列表，得到: {type(role)}")
+                # 保持向后兼容性
+                tool_dict['role'] = role if isinstance(role, str) else role[0] if role else None
                 
             self.server.add_tool(tool_dict)
 
@@ -176,7 +184,7 @@ class AnnotatedDecorators:
 
         return decorator
 
-    def streaming_tool(self, description: str = None, chunk_size: int = 50, role: str = None):
+    def streaming_tool(self, description: str = None, chunk_size: int = 50, role: Union[str, List[str]] = None):
         """流式工具装饰器（注册为真正的流式处理器）"""
 
         def decorator(func):
@@ -199,7 +207,15 @@ class AnnotatedDecorators:
             
             # 添加role信息（如果提供）
             if role is not None:
-                tool_dict['role'] = role
+                # 支持单个角色或角色数组
+                if isinstance(role, str):
+                    tool_dict['roles'] = [role]
+                elif isinstance(role, list):
+                    tool_dict['roles'] = role
+                else:
+                    raise ValueError(f"role参数必须是字符串或字符串列表，得到: {type(role)}")
+                # 保持向后兼容性
+                tool_dict['role'] = role if isinstance(role, str) else role[0] if role else None
                 
             self.server.add_tool(tool_dict)
 
