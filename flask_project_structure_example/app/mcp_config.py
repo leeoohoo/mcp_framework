@@ -13,6 +13,12 @@ mcp_server = EnhancedMCPServer(
     description="集成到Flask项目中的MCP服务器"
 )
 
+mcp_server1 = EnhancedMCPServer(
+    name="flask-integrated-mcp-server",
+    version="1.0.0",
+    description="集成到Flask项目中的MCP服务器"
+)
+
 # 可以在这里添加全局配置
 mcp_server.config = {
     "max_concurrent_requests": 10,
