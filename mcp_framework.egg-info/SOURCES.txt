@@ -20,6 +20,7 @@ mcp_framework/core/base.py
 mcp_framework/core/config.py
 mcp_framework/core/decorators.py
 mcp_framework/core/launcher.py
+mcp_framework/core/streaming.py
 mcp_framework/core/utils.py
 mcp_framework/server/__init__.py
 mcp_framework/server/handlers.py

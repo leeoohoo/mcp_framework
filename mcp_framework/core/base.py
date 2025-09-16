@@ -13,6 +13,7 @@ import uuid
 
 from .config import ServerParameter, ServerConfigManager
 from .utils import get_data_dir
+from .streaming import MCPStreamWrapper, OpenAIStreamFormatter
 
 
 class BaseMCPServer(ABC):
@@ -43,6 +44,10 @@ class BaseMCPServer(ABC):
 
         # 配置更新回调机制
         self._config_update_callbacks: List[Callable[[Dict[str, Any], Dict[str, Any]], None]] = []
+        
+        # OpenAI 格式流式包装器
+        self._openai_stream_wrapper = MCPStreamWrapper(model_name=f"{name}-{version}")
+        self._enable_openai_format = True  # 默认启用OpenAI格式
 
     @abstractmethod
     async def initialize(self) -> None:
@@ -392,6 +397,94 @@ class BaseMCPServer(ABC):
         if callback in self._config_update_callbacks:
             self._config_update_callbacks.remove(callback)
             self.logger.info(f"Unregistered config update callback: {callback.__name__}")
+    
+    def set_openai_format_enabled(self, enabled: bool) -> None:
+        """设置是否启用OpenAI格式的流式返回"""
+        self._enable_openai_format = enabled
+        self.logger.info(f"OpenAI format streaming {'enabled' if enabled else 'disabled'}")
+    
+    def is_openai_format_enabled(self) -> bool:
+        """检查是否启用了OpenAI格式的流式返回"""
+        return self._enable_openai_format
+    
+    async def handle_tool_call_stream_openai(
+        self, 
+        tool_name: str, 
+        arguments: Dict[str, Any], 
+        session_id: str = None
+    ) -> AsyncGenerator[str, None]:
+        """处理工具调用并返回OpenAI格式的流式数据
+        
+        Args:
+            tool_name: 工具名称
+            arguments: 工具参数
+            session_id: 会话ID，如果为None则自动创建
+            
+        Yields:
+            OpenAI格式的SSE数据字符串
+        """
+        if not self._enable_openai_format:
+            # 如果未启用OpenAI格式，回退到原始流式处理
+            async for chunk in self.handle_tool_call_stream(tool_name, arguments, session_id):
+                yield chunk
+            return
+        
+        # 如果没有提供session_id，自动创建一个
+        if session_id is None:
+            session_id = self.start_streaming_session()
+        
+        try:
+            # 获取原始流式生成器
+            original_stream = self.handle_tool_call_stream(tool_name, arguments, session_id)
+            
+            # 使用OpenAI格式包装器包装流式输出
+            async for openai_chunk in self._openai_stream_wrapper.wrap_tool_call_stream(
+                tool_name, arguments, original_stream, session_id
+            ):
+                # 检查是否应该停止
+                if self.is_streaming_stopped(session_id):
+                    self.logger.info(f"OpenAI streaming stopped for session {session_id}")
+                    break
+                yield openai_chunk
+                
+        except Exception as e:
+            self.logger.error(f"Error in OpenAI streaming for tool {tool_name}: {e}")
+            # 发送错误格式的OpenAI响应
+            formatter = OpenAIStreamFormatter(self._openai_stream_wrapper.model_name, session_id)
+            error_chunk = formatter.create_error_chunk(str(e))
+            yield error_chunk.to_sse_data()
+        finally:
+            # 清理会话
+            if session_id:
+                self.cleanup_streaming_session(session_id)
+    
+    async def handle_simple_response_openai(
+        self, 
+        content: Any, 
+        session_id: str = None
+    ) -> AsyncGenerator[str, None]:
+        """将简单响应包装为OpenAI格式的流式输出
+        
+        Args:
+            content: 响应内容
+            session_id: 会话ID
+            
+        Yields:
+            OpenAI格式的SSE数据字符串
+        """
+        if not self._enable_openai_format:
+            # 如果未启用OpenAI格式，直接返回内容
+            yield str(content)
+            return
+        
+        try:
+            async for openai_chunk in self._openai_stream_wrapper.wrap_simple_response(content, session_id):
+                yield openai_chunk
+        except Exception as e:
+            self.logger.error(f"Error in OpenAI simple response streaming: {e}")
+            formatter = OpenAIStreamFormatter(self._openai_stream_wrapper.model_name, session_id)
+            error_chunk = formatter.create_error_chunk(str(e))
+            yield error_chunk.to_sse_data()
 
     def _notify_config_update(self, old_config: Dict[str, Any], new_config: Dict[str, Any]) -> None:
         """通知所有注册的回调函数配置已更新"""
@@ -563,9 +656,9 @@ class EnhancedMCPServer(BaseMCPServer):
 
     async def initialize(self) -> None:
         """初始化服务器"""
-        # 触发装饰器注册
-        if hasattr(self, 'decorators') and self.decorators is not None:
-            self.decorators.register_all()
+        # 触发装饰器注册（通过访问setup_tools属性）
+        if hasattr(self, 'setup_tools'):
+            _ = self.setup_tools
         self.logger.info(f"EnhancedMCPServer '{self.name}' initialized")
 
     async def handle_tool_call(self, tool_name: str, arguments: Dict[str, Any]) -> Any:

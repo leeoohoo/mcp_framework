@@ -114,7 +114,9 @@ class UserService:
                     "error": f"用户 {user_id} 不存在",
                     "timestamp": time.time()
                 }
-    
+
+
+
     # Flask服务方法（非MCP工具）
     def get_user_by_id(self, user_id: int) -> Dict[str, Any]:
         """Flask路由使用的方法"""

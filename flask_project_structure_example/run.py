@@ -16,10 +16,12 @@ def start_mcp_server():
     """在单独线程中启动MCP服务器"""
     try:
         print("🚀 启动MCP服务器...")
+        import os
+        default_port = int(os.getenv('MCP_SERVER_PORT', '8080'))
         run_server_main(
             server_instance=mcp_server,
             server_name="flask-integrated-mcp-server",
-            default_port=8080
+            default_port=default_port
         )
     except Exception as e:
         print(f"❌ MCP服务器启动失败: {e}")
@@ -50,16 +52,20 @@ def main():
     print("⏳ 等待MCP服务器启动...")
     time.sleep(2)
     
+    # 获取MCP服务器端口
+    import os
+    mcp_port = os.getenv('MCP_SERVER_PORT', '8080')
+    
     print("\n📡 服务地址:")
     print(f"   Flask API: http://localhost:5001")
-    print(f"   MCP服务器: http://localhost:8080")
+    print(f"   MCP服务器: http://localhost:{mcp_port}")
     print("\n🔧 测试命令:")
     print("   # 测试Flask API")
     print("   curl http://localhost:5001/")
     print("   curl http://localhost:5001/api/users")
     print("   \n   # 测试MCP服务器")
-    print("   curl http://localhost:8080/tools/list")
-    print("   curl -X POST http://localhost:8080/tools/call \\")
+    print(f"   curl http://localhost:{mcp_port}/tools/list")
+    print(f"   curl -X POST http://localhost:{mcp_port}/tools/call \\")
     print("     -H 'Content-Type: application/json' \\")
     print("     -d '{\"name\": \"get_user_info\", \"arguments\": {\"user_id\": 1}}'")
     print("\n" + "="*60)

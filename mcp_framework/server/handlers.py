@@ -597,6 +597,115 @@ class SSEHandler:
             pass
 
         return response
+    
+    async def handle_sse_tool_call_openai(self, request):
+        """处理 OpenAI 格式的 SSE 工具调用请求"""
+        # 创建 SSE 响应
+        response = web.StreamResponse()
+        response.headers['Content-Type'] = 'text/event-stream'
+        response.headers['Cache-Control'] = 'no-cache'
+        response.headers['Connection'] = 'keep-alive'
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Headers'] = 'Cache-Control'
+        
+        await response.prepare(request)
+        
+        session_id = None
+        try:
+            # 获取查询参数或 POST 数据
+            if request.method == 'POST':
+                data = await request.json()
+                tool_name = data.get('tool_name')
+                arguments = data.get('arguments', {})
+            else:
+                # GET 请求，从查询参数获取
+                tool_name = request.query.get('tool_name')
+                arguments_str = request.query.get('arguments')
+
+                if arguments_str:
+                    try:
+                        arguments = json.loads(arguments_str)
+                    except json.JSONDecodeError:
+                        arguments = {}
+                        for key, value in request.query.items():
+                            if key != 'tool_name':
+                                arguments[key] = value
+                else:
+                    arguments = {}
+                    for key, value in request.query.items():
+                        if key != 'tool_name':
+                            arguments[key] = value
+
+            self.logger.info(f"OpenAI SSE tool call - tool_name: {tool_name}, arguments: {arguments}")
+
+            if not tool_name:
+                raise ValueError("Tool name is required")
+
+            # 检查工具是否存在
+            tool_exists = any(tool['name'] == tool_name for tool in self.mcp_server.tools)
+            if not tool_exists:
+                raise ValueError(f"Tool '{tool_name}' not found")
+
+            # 基于工具 schema 对参数进行类型转换和默认值填充
+            try:
+                arguments = self._coerce_arguments_with_schema(tool_name, arguments)
+            except Exception as e:
+                raise ValueError(f"Tool '{tool_name}' missing required parameter: {str(e).split(': ')[-1] if ': ' in str(e) else str(e)}")
+
+            # 创建流式会话
+            session_id = self.mcp_server.start_streaming_session()
+            
+            # 添加会话ID到响应头
+            response.headers['X-Session-ID'] = session_id
+
+            try:
+                # 使用OpenAI格式的流式处理
+                async for openai_chunk in self.mcp_server.handle_tool_call_stream_openai(tool_name, arguments, session_id):
+                    # 检查是否应该停止
+                    if self.mcp_server.is_streaming_stopped(session_id):
+                        # 发送停止事件
+                        await response.write(b"data: [DONE]\n\n")
+                        break
+
+                    # 直接写入OpenAI格式的SSE数据
+                    try:
+                        await response.write(openai_chunk.encode('utf-8'))
+                        await response.drain()
+                    except Exception as write_error:
+                        self.logger.warning(f"Failed to write OpenAI SSE data: {write_error}")
+                        break
+                    
+                    await asyncio.sleep(0.01)  # 小延迟避免过快发送
+
+                # 发送完成标记
+                await response.write(b"data: [DONE]\n\n")
+
+            except Exception as e:
+                # 发送错误事件（OpenAI格式）
+                from ..core.streaming import OpenAIStreamFormatter
+                formatter = OpenAIStreamFormatter(f"{self.mcp_server.name}-{self.mcp_server.version}", session_id)
+                error_chunk = formatter.create_error_chunk(str(e))
+                await response.write(error_chunk.to_sse_data().encode('utf-8'))
+            finally:
+                # 清理会话
+                if session_id:
+                    self.mcp_server.cleanup_streaming_session(session_id)
+
+            return response
+
+        except Exception as e:
+            self.logger.error(f"OpenAI SSE tool call error: {str(e)}")
+            # 发送错误事件
+            from ..core.streaming import OpenAIStreamFormatter
+            formatter = OpenAIStreamFormatter(f"{self.mcp_server.name}-{self.mcp_server.version}", session_id)
+            error_chunk = formatter.create_error_chunk(str(e))
+            await response.write(error_chunk.to_sse_data().encode('utf-8'))
+            
+            # 清理会话（如果已创建）
+            if session_id:
+                self.mcp_server.cleanup_streaming_session(session_id)
+        
+        return response
 
 
 class APIHandler:

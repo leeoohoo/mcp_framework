@@ -123,6 +123,9 @@ async def run_server(
         
         # 创建 HTTP 服务器，使用正确的配置管理器
         http_server = MCPHTTPServer(server_instance, config, config_adapter)
+        
+        # 将HTTP服务器实例关联到MCP服务器，以便test_page.py可以获取端口信息
+        server_instance._http_server = http_server
 
         print(f"🚀 {server_name} 启动中...")
         print(f"📍 服务器地址: http://{config.host}:{config.port}")

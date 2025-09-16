@@ -1,8 +1,4 @@
-#!/usr/bin/env python3
-"""
-MCP 服务器配置页面
-"""
-
+import json
 import logging
 from aiohttp import web
 from typing import Union
@@ -13,13 +9,25 @@ logger = logging.getLogger(__name__)
 
 class ConfigPageHandler:
     """配置页面处理器"""
-
-    def __init__(self, config_manager: Union[ConfigManager, ServerConfigAdapter]):
+    
+    def __init__(self, config_manager: Union[ConfigManager, ServerConfigAdapter], mcp_server=None):
         self.config_manager = config_manager
-        self.logger = logging.getLogger(f"{__name__}.ConfigPageHandler")
-
+        self.mcp_server = mcp_server
+    
     async def serve_config_page(self, request):
-        """系统配置页面"""
+        """提供配置页面"""
+        # 获取当前端口
+        current_port = "8080"  # 默认值
+        if self.mcp_server:
+            server_port = getattr(self.mcp_server, 'port', None)
+            if server_port is None:
+                # 尝试从HTTP服务器获取端口
+                http_server = getattr(self.mcp_server, '_http_server', None)
+                if http_server and hasattr(http_server, 'port'):
+                    server_port = http_server.port
+            if server_port:
+                current_port = str(server_port)
+        
         html_content = """
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -257,7 +265,7 @@ class ConfigPageHandler:
 
                 <div class="form-group">
                     <label for="port">端口号</label>
-                    <input type="number" id="port" name="port" min="1" max="65535" placeholder="8080">
+                    <input type="number" id="port" name="port" min="1" max="65535" placeholder="{current_port}">
                     <div class="help-text">服务器监听的端口号，修改后需要重启服务器才能生效</div>
                 </div>
 
@@ -493,5 +501,6 @@ class ConfigPageHandler:
     </script>
 </body>
 </html>
-        """
+""".format(current_port=current_port)
+        
         return web.Response(text=html_content, content_type='text/html')
