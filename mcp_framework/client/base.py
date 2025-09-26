@@ -20,7 +20,8 @@ class MCPStdioClient:
                  client_name: str = "mcp-framework-client",
                  client_version: str = "1.0.0",
                  startup_timeout: float = 5.0,
-                 response_timeout: float = 30.0):
+                 response_timeout: float = 30.0,
+                 config_dir: Optional[str] = None):
         """
         初始化 MCP Stdio 客户端
         
@@ -32,6 +33,7 @@ class MCPStdioClient:
             client_version: 客户端版本
             startup_timeout: 启动超时时间（秒）
             response_timeout: 响应超时时间（秒）
+            config_dir: 自定义配置目录路径
         """
         self.server_script = server_script
         self.alias = alias
@@ -40,6 +42,7 @@ class MCPStdioClient:
         self.client_version = client_version
         self.startup_timeout = startup_timeout
         self.response_timeout = response_timeout
+        self.config_dir = config_dir
         
         self.process = None
         self.request_id = 0
@@ -65,6 +68,10 @@ class MCPStdioClient:
             # 添加别名参数
             if self.alias:
                 cmd.extend(["--alias", self.alias])
+            
+            # 添加配置目录参数
+            if self.config_dir:
+                cmd.extend(["--config-dir", self.config_dir])
             
             # 添加其他参数
             cmd.extend(self.server_args)

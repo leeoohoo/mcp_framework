@@ -85,6 +85,11 @@ class SimpleLauncher:
             help='服务器别名'
         )
         
+        parser.add_argument(
+            '--config-dir',
+            help='自定义配置文件目录'
+        )
+        
         return parser
     
     def _start_server(self, args):
@@ -93,6 +98,7 @@ class SimpleLauncher:
         port = args.port
         server_name = args.name
         alias = args.alias
+        config_dir = getattr(args, 'config_dir', None)
         
         # 验证端口参数
         if mode in ['dual', 'http'] and port is None:
@@ -107,19 +113,36 @@ class SimpleLauncher:
             'http': f'http模式, 端口: {port}'
         }
         
+        config_info = f" 配置目录: {config_dir}" if config_dir else ""
         print(f"🚀 启动 {server_name} ({mode_info[mode]})" + 
-              (f" 别名: {alias}" if alias else "") + "...")
+              (f" 别名: {alias}" if alias else "") + config_info + "...")
+        
+        # 准备 custom_args 来传递 config_dir
+        custom_args = {}
+        if config_dir:
+            custom_args['config_dir'] = config_dir
         
         # 设置 sys.argv 以兼容现有的启动函数
         if mode == 'stdio':
             sys.argv = [sys.argv[0]]
-            run_stdio_server_main(self.server_instance, server_name=server_name, alias=alias)
+            if config_dir:
+                sys.argv.extend(['--config-dir', config_dir])
+            run_stdio_server_main(
+                self.server_instance, 
+                server_name=server_name, 
+                alias=alias,
+                config_dir=config_dir
+            )
         elif mode == 'dual':
             sys.argv = [sys.argv[0], "--port", str(port)]
-            run_dual_server_main(self.server_instance, default_port=port, server_name=server_name, alias=alias)
+            if config_dir:
+                sys.argv.extend(['--config-dir', config_dir])
+            run_dual_server_main(self.server_instance, default_port=port, server_name=server_name, alias=alias, custom_args=custom_args if custom_args else None)
         elif mode == 'http':
             sys.argv = [sys.argv[0], "--port", str(port)]
-            run_http_server_main(self.server_instance, default_port=port, server_name=server_name, alias=alias)
+            if config_dir:
+                sys.argv.extend(['--config-dir', config_dir])
+            run_http_server_main(self.server_instance, default_port=port, server_name=server_name, alias=alias, custom_args=custom_args if custom_args else None)
     
     @classmethod
     def quick_start(cls, server_instance: Any, default_name: Optional[str] = None):

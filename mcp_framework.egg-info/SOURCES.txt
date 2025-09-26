@@ -4,7 +4,6 @@ README.md
 docker-compose.yml
 pyproject.toml
 requirements.txt
-running_instances.json
 setup.py
 examples/README.md
 examples/sdk_config_test.py

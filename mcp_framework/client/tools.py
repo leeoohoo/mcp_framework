@@ -27,6 +27,7 @@ class ToolsClient(MCPStdioClient):
     def __init__(self, 
                  server_script: str,
                  alias: Optional[str] = None,
+                 config_dir: Optional[str] = None,
                  server_args: Optional[List[str]] = None,
                  client_name: str = "mcp-framework-client",
                  client_version: str = "1.0.0",
@@ -38,6 +39,7 @@ class ToolsClient(MCPStdioClient):
         Args:
             server_script: 服务器脚本路径
             alias: 服务器别名（重要参数，用于多实例管理）
+            config_dir: 自定义配置目录路径（可选）
             server_args: 额外的服务器参数
             client_name: 客户端名称
             client_version: 客户端版本
@@ -47,6 +49,7 @@ class ToolsClient(MCPStdioClient):
         super().__init__(
             server_script=server_script,
             alias=alias,
+            config_dir=config_dir,
             server_args=server_args,
             client_name=client_name,
             client_version=client_version,

@@ -35,8 +35,43 @@ def get_data_dir():
         return Path.cwd() / "data"
 
 
-def get_config_dir():
-    """获取配置目录"""
+def get_config_dir(custom_config_dir: Optional[str] = None):
+    """
+    获取配置目录
+    
+    优先级顺序：
+    1. 传入的 custom_config_dir 参数 (最高优先级)
+    2. 环境变量 MCP_CONFIG_DIR
+    3. 默认行为：
+       - 打包环境：可执行文件目录/config
+       - 开发环境：当前工作目录/config
+    
+    Args:
+        custom_config_dir: 自定义配置目录路径
+        
+    Returns:
+        Path: 配置目录路径
+    """
+    # 1. 优先使用传入的参数
+    if custom_config_dir:
+        config_path = Path(custom_config_dir)
+        if config_path.is_absolute():
+            return config_path
+        else:
+            # 相对路径转换为绝对路径
+            return Path.cwd() / config_path
+    
+    # 2. 检查环境变量
+    env_config_dir = os.environ.get('MCP_CONFIG_DIR')
+    if env_config_dir:
+        config_path = Path(env_config_dir)
+        if config_path.is_absolute():
+            return config_path
+        else:
+            # 相对路径转换为绝对路径
+            return Path.cwd() / config_path
+    
+    # 3. 默认行为
     if is_frozen():
         # 打包后使用可执行文件旁边的目录
         return Path(sys.executable).parent / "config"
@@ -168,13 +203,14 @@ def create_server_config_from_args(args: Dict[str, Any]):
     return ServerConfig(**filtered_config)
 
 
-def create_port_based_config_manager(server_name: str, port: int):
+def create_port_based_config_manager(server_name: str, port: int, custom_config_dir: Optional[str] = None):
     """
     根据端口号创建配置管理器
     
     Args:
         server_name: 服务器名称
         port: 端口号
+        custom_config_dir: 自定义配置目录
         
     Returns:
         ServerConfigManager 实例
@@ -182,15 +218,34 @@ def create_port_based_config_manager(server_name: str, port: int):
     # 延迟导入避免循环导入
     from .config import ServerConfigManager
     
-    return ServerConfigManager.create_for_port(server_name, port)
+    return ServerConfigManager.create_for_port(server_name, port, custom_config_dir)
 
 
-def create_default_config_manager(server_name: str):
+def create_alias_based_config_manager(server_name: str, alias: str, custom_config_dir: Optional[str] = None):
+    """
+    根据别名创建配置管理器
+    
+    Args:
+        server_name: 服务器名称
+        alias: 别名
+        custom_config_dir: 自定义配置目录
+        
+    Returns:
+        ServerConfigManager 实例
+    """
+    # 延迟导入避免循环导入
+    from .config import ServerConfigManager
+    
+    return ServerConfigManager.create_for_alias(server_name, alias, custom_config_dir)
+
+
+def create_default_config_manager(server_name: str, custom_config_dir: Optional[str] = None):
     """
     创建默认配置管理器
     
     Args:
         server_name: 服务器名称
+        custom_config_dir: 自定义配置目录
         
     Returns:
         ServerConfigManager 实例
@@ -198,7 +253,7 @@ def create_default_config_manager(server_name: str):
     # 延迟导入避免循环导入
     from .config import ServerConfigManager
     
-    return ServerConfigManager.create_default(server_name)
+    return ServerConfigManager.create_default(server_name, custom_config_dir)
 
 
 def list_all_port_configs(server_name: str) -> Dict[str, Any]:

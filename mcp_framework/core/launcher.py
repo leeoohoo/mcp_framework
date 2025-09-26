@@ -75,7 +75,7 @@ async def run_server(
         config = create_server_config_from_args(args)
         
         # 根据端口号创建专用的配置管理器
-        port_config_manager = create_port_based_config_manager(server_name, config.port)
+        port_config_manager = create_port_based_config_manager(server_name, config.port, args.get('config_dir'))
         
         # 为服务器实例设置正确的配置管理器
         server_instance.server_config_manager = port_config_manager
