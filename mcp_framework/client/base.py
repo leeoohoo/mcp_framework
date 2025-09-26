@@ -6,6 +6,8 @@ MCP Stdio 客户端基础类
 import asyncio
 import json
 import sys
+import os
+import stat
 from typing import Dict, Any, Optional, List, Union
 from pathlib import Path
 
@@ -54,6 +56,83 @@ class MCPStdioClient:
         self.request_id += 1
         return self.request_id
     
+    def _is_executable_binary(self, file_path: str) -> bool:
+        """
+        检查文件是否为可执行的二进制文件
+        支持多种平台和架构的二进制格式检测
+        
+        Args:
+            file_path: 文件路径
+            
+        Returns:
+            bool: 是否为可执行二进制文件
+        """
+        try:
+            # 检查文件是否存在
+            if not os.path.exists(file_path):
+                return False
+                
+            file_stat = os.stat(file_path)
+            is_executable = bool(file_stat.st_mode & stat.S_IEXEC)
+            
+            # 读取文件开头更多字节来判断文件类型
+            with open(file_path, 'rb') as f:
+                header = f.read(16)  # 读取更多字节以支持更复杂的检测
+                
+            if len(header) < 4:
+                return False
+                
+            # 检查各种二进制文件格式
+            
+            # 1. Mach-O 格式 (macOS)
+            # ARM64 (Apple Silicon): cf fa ed fe
+            # x86_64 (Intel Mac): cf fa ed fe (64-bit) 或 ce fa ed fe (64-bit big-endian)
+            # i386 (32-bit Intel): fe ed fa ce 或 ce fa ed fe
+            if (header.startswith(b'\xcf\xfa\xed\xfe') or  # Mach-O 64-bit little-endian (ARM64/x86_64)
+                header.startswith(b'\xfe\xed\xfa\xcf') or  # Mach-O 64-bit big-endian
+                header.startswith(b'\xfe\xed\xfa\xce') or  # Mach-O 32-bit big-endian
+                header.startswith(b'\xce\xfa\xed\xfe')):   # Mach-O 32-bit little-endian
+                return is_executable  # Mach-O文件需要可执行权限
+            
+            # 2. ELF 格式 (Linux/Unix)
+            # 支持各种架构: x86, x86_64, ARM, ARM64, MIPS, PowerPC 等
+            if header.startswith(b'\x7fELF'):
+                return is_executable  # ELF文件需要可执行权限
+            
+            # 3. PE 格式 (Windows)
+            # .exe, .dll, .sys 等文件
+            if header.startswith(b'MZ'):
+                # Windows PE文件，即使没有可执行权限也应该被识别
+                # 进一步验证是否为有效的PE文件
+                if len(header) >= 16:
+                    # 检查PE签名位置
+                    try:
+                        pe_offset = int.from_bytes(header[12:16], byteorder='little')
+                        if pe_offset < len(header):
+                            return True
+                    except:
+                        pass
+                # 即使无法验证PE签名，MZ开头的文件通常也是有效的PE文件
+                return True
+            
+            # 4. 其他可能的二进制格式
+            # COFF (Common Object File Format)
+            if (header.startswith(b'\x4c\x01') or  # i386
+                header.startswith(b'\x64\x86') or  # x86_64
+                header.startswith(b'\xc4\x01')):   # ARM
+                return is_executable  # COFF文件需要可执行权限
+            
+            # 5. 脚本文件但有shebang的情况
+            # 虽然是文本文件，但如果有shebang且可执行，也应该直接执行
+            if header.startswith(b'#!'):
+                # 这是脚本文件，不是二进制文件，返回False让Python解释器处理
+                return False
+                
+            return False
+            
+        except Exception:
+            return False
+
     async def connect(self) -> bool:
         """
         连接到 MCP 服务器
@@ -62,8 +141,13 @@ class MCPStdioClient:
             bool: 连接是否成功
         """
         try:
-            # 构建启动命令
-            cmd = [sys.executable, self.server_script, "stdio"]
+            # 检查服务器脚本是否为二进制可执行文件
+            if self._is_executable_binary(self.server_script):
+                # 直接执行二进制文件
+                cmd = [self.server_script, "stdio"]
+            else:
+                # 使用Python解释器执行脚本
+                cmd = [sys.executable, self.server_script, "stdio"]
             
             # 添加别名参数
             if self.alias:
