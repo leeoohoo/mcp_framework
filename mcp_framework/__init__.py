@@ -40,12 +40,26 @@ from .core.launcher import (
     run_server_main
 )
 
+from .core.simple_launcher import (
+    SimpleLauncher,
+    simple_main,
+    run_server as simple_run_server,
+    start_server
+)
+
 from .core.utils import (
     setup_logging,
     check_dependencies
 )
 
 from .server.http_server import MCPHTTPServer
+
+# 客户端 SDK
+from .client import (
+    MCPStdioClient,
+    ConfigClient,
+    ToolsClient
+)
 
 __version__ = "0.1.1"
 
@@ -82,9 +96,18 @@ __all__ = [
     # 启动器
     'run_server',
     'run_server_main',
+    'SimpleLauncher',
+    'simple_main',
+    'simple_run_server',
+    'start_server',
     'setup_logging',
     'check_dependencies',
     
     # HTTP 服务器
-    'MCPHTTPServer'
+    'MCPHTTPServer',
+    
+    # 客户端 SDK
+    'MCPStdioClient',
+    'ConfigClient',
+    'ToolsClient'
 ]

@@ -1,8 +1,4 @@
-#!/usr/bin/env python3
-"""
-MCP 服务器配置页面
-"""
-
+import json
 import logging
 from aiohttp import web
 from typing import Union
@@ -13,13 +9,25 @@ logger = logging.getLogger(__name__)
 
 class ConfigPageHandler:
     """配置页面处理器"""
-
-    def __init__(self, config_manager: Union[ConfigManager, ServerConfigAdapter]):
+    
+    def __init__(self, config_manager: Union[ConfigManager, ServerConfigAdapter], mcp_server=None):
         self.config_manager = config_manager
-        self.logger = logging.getLogger(f"{__name__}.ConfigPageHandler")
-
+        self.mcp_server = mcp_server
+    
     async def serve_config_page(self, request):
-        """系统配置页面"""
+        """提供配置页面"""
+        # 获取当前端口
+        current_port = "8080"  # 默认值
+        if self.mcp_server:
+            server_port = getattr(self.mcp_server, 'port', None)
+            if server_port is None:
+                # 尝试从HTTP服务器获取端口
+                http_server = getattr(self.mcp_server, '_http_server', None)
+                if http_server and hasattr(http_server, 'port'):
+                    server_port = http_server.port
+            if server_port:
+                current_port = str(server_port)
+        
         html_content = """
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -250,6 +258,12 @@ class ConfigPageHandler:
                 <div class="section-title">🌐 服务器设置</div>
 
                 <div class="form-group">
+                    <label for="alias">服务器别名</label>
+                    <input type="text" id="alias" name="alias" placeholder="例如: data-server">
+                    <div class="help-text">为服务器实例设置别名，用于多实例管理和客户端连接</div>
+                </div>
+
+                <div class="form-group">
                     <label for="host">服务器地址</label>
                     <input type="text" id="host" name="host" placeholder="0.0.0.0" value="0.0.0.0" disabled>
                     <div class="help-text">固定为 0.0.0.0 以监听所有网络接口，允许外部访问</div>
@@ -257,7 +271,7 @@ class ConfigPageHandler:
 
                 <div class="form-group">
                     <label for="port">端口号</label>
-                    <input type="number" id="port" name="port" min="1" max="65535" placeholder="8080">
+                    <input type="number" id="port" name="port" min="1" max="65535" placeholder="{current_port}">
                     <div class="help-text">服务器监听的端口号，修改后需要重启服务器才能生效</div>
                 </div>
 
@@ -323,6 +337,7 @@ class ConfigPageHandler:
         </form>
 
         <div class="navigation">
+            <a href="/aliases" class="nav-link">🏷️ 别名管理</a>
             <a href="/setup" class="nav-link">🚀 服务器设置</a>
             <a href="/test" class="nav-link">🧪 测试页面</a>
             <a href="/health" class="nav-link">💚 健康检查</a>
@@ -364,6 +379,7 @@ class ConfigPageHandler:
             container.innerHTML = '';
 
             const configItems = [
+                { key: 'alias', label: '服务器别名', value: config.alias || '未设置' },
                 { key: 'host', label: '服务器地址', value: config.host },
                 { key: 'port', label: '端口号', value: config.port },
                 { key: 'log_level', label: '日志级别', value: config.log_level },
@@ -493,5 +509,6 @@ class ConfigPageHandler:
     </script>
 </body>
 </html>
-        """
+""".format(current_port=current_port)
+        
         return web.Response(text=html_content, content_type='text/html')

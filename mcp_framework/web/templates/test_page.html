@@ -269,6 +269,40 @@
     </div>
 
     <script>
+        // 端点配置
+        const ENDPOINTS = {
+            tools: '{{tools_endpoint}}',
+            resources: '{{resources_endpoint}}',
+            toolCall: '{{tool_call_endpoint}}',
+            sse: '{{sse_endpoint}}',
+            sseStop: '{{sse_stop_endpoint}}',
+            openaiSSE: '{{openai_sse_endpoint}}',
+            openaiSSEStop: '{{openai_sse_stop_endpoint}}'
+        };
+        
+        // 调试：打印端点配置
+        console.log('ENDPOINTS配置:', ENDPOINTS);
+        
+        // 测试网络连接
+        async function testNetworkConnection() {
+            try {
+                console.log('Testing basic fetch to server...');
+                const response = await fetch('/info');
+                console.log('Basic fetch successful:', response.status);
+                
+                console.log('Testing OpenAI SSE endpoint availability...');
+                const testResponse = await fetch(ENDPOINTS.openaiSSE, {
+                    method: 'OPTIONS'
+                });
+                console.log('OPTIONS request result:', testResponse.status);
+            } catch (error) {
+                console.error('Network test failed:', error);
+            }
+        }
+        
+        // 页面加载时测试网络连接
+        testNetworkConnection();
+
         // 页面加载时初始化
         document.addEventListener('DOMContentLoaded', async function() {
             await loadStreamingInfo();
@@ -453,11 +487,25 @@
                     testForm.appendChild(formGroup);
                 });
 
+                const buttonGroup = document.createElement('div');
+                buttonGroup.style.display = 'flex';
+                buttonGroup.style.gap = '10px';
+                buttonGroup.style.alignItems = 'center';
+
                 const testButton = document.createElement('button');
                 testButton.textContent = '测试';
                 testButton.id = 'test-btn-' + tool.name;
                 testButton.onclick = () => handleTestButtonClick(tool.name, testForm, testButton);
-                testForm.appendChild(testButton);
+                buttonGroup.appendChild(testButton);
+
+                const openaiButton = document.createElement('button');
+                openaiButton.textContent = 'OpenAI格式';
+                openaiButton.id = 'openai-btn-' + tool.name;
+                openaiButton.style.background = '#10b981';
+                openaiButton.onclick = () => handleOpenAITestButtonClick(tool.name, testForm, openaiButton);
+                buttonGroup.appendChild(openaiButton);
+
+                testForm.appendChild(buttonGroup);
 
                 const result = document.createElement('div');
                 result.className = 'result';
@@ -476,6 +524,7 @@
 
         // 跟踪活跃的流式会话
         let activeStreams = new Map(); // toolName -> { sessionId, reader, abortController }
+        let activeOpenAIStreams = new Map(); // toolName -> { sessionId, reader, abortController }
 
         // 获取支持流式输出的工具列表
         async function loadStreamingInfo() {
@@ -497,6 +546,18 @@
             } else {
                 // 开始测试
                 await testTool(toolName, formElement, buttonElement);
+            }
+        }
+
+        // 处理OpenAI格式测试/停止按钮点击
+        async function handleOpenAITestButtonClick(toolName, formElement, buttonElement) {
+            // 检查是否有活跃的OpenAI流式会话
+            if (activeOpenAIStreams.has(toolName)) {
+                // 停止OpenAI流式输出
+                await stopOpenAITool(toolName, buttonElement);
+            } else {
+                // 开始OpenAI格式测试
+                await testToolWithOpenAI(toolName, formElement, buttonElement);
             }
         }
 
@@ -543,6 +604,36 @@
 
             } catch (error) {
                 console.error('Stop failed:', error);
+            }
+        }
+
+        // 停止OpenAI工具流式输出
+        async function stopOpenAITool(toolName, buttonElement) {
+            const streamInfo = activeOpenAIStreams.get(toolName);
+            if (!streamInfo) return;
+
+            try {
+                // 取消流式读取
+                if (streamInfo.abortController) {
+                    streamInfo.abortController.abort();
+                }
+
+                // 清理会话
+                activeOpenAIStreams.delete(toolName);
+
+                // 更新按钮状态
+                buttonElement.textContent = 'OpenAI格式';
+                buttonElement.style.background = '#10b981';
+
+                // 显示停止消息
+                const resultElement = document.getElementById('result-' + toolName);
+                if (resultElement) {
+                    resultElement.className = 'result';
+                    resultElement.innerHTML = '<strong>🛑 已停止:</strong> OpenAI格式流式输出已被用户停止';
+                }
+
+            } catch (error) {
+                console.error('OpenAI Stop failed:', error);
             }
         }
 
@@ -654,6 +745,258 @@
             } catch (error) {
                 resultElement.className = 'result error';
                 resultElement.innerHTML = '<strong>🚫 HTTP请求失败:</strong> ' + error.message;
+            }
+        }
+
+        // 使用OpenAI格式测试工具
+        async function testToolWithOpenAI(toolName, formElement, buttonElement) {
+            const inputs = formElement.querySelectorAll('input, select');
+            const arguments = {};
+
+            // 获取工具的Schema信息
+            const tool = window.mcpTools.find(t => t.name === toolName);
+            const properties = tool?.inputSchema?.properties || {};
+
+            inputs.forEach(input => {
+                const value = input.type === 'checkbox' ? input.checked : input.value.trim();
+                const property = properties[input.name] || {};
+
+                if (value !== '' || input.type === 'checkbox') {
+                    // 根据输入类型处理值
+                    switch (input.type) {
+                        case 'number':
+                            if (value !== '') {
+                                const numValue = parseFloat(value);
+                                if (!isNaN(numValue)) {
+                                    // 检查是否是整数类型（step为1表示整数）
+                                    arguments[input.name] = input.step === '1' ? parseInt(value) : numValue;
+                                }
+                            }
+                            break;
+                        case 'checkbox':
+                            arguments[input.name] = input.checked;
+                            break;
+                        case 'text':
+                            if (value !== '') {
+                                // 尝试解析JSON数组
+                                if (value.startsWith('[') && value.endsWith(']')) {
+                                    try {
+                                        arguments[input.name] = JSON.parse(value);
+                                    } catch (e) {
+                                        arguments[input.name] = value;
+                                    }
+                                } else {
+                                    arguments[input.name] = value;
+                                }
+                            }
+                            break;
+                        default:
+                            if (value !== '') {
+                                arguments[input.name] = value;
+                            }
+                    }
+                } else if (property.default !== undefined) {
+                    // 如果没有输入值但有默认值，使用默认值
+                    arguments[input.name] = property.default;
+                }
+            });
+
+            const resultElement = document.getElementById('result-' + toolName);
+            resultElement.style.display = 'block';
+            resultElement.className = 'result';
+
+            // 更新按钮为停止状态
+            buttonElement.textContent = '停止';
+            buttonElement.style.background = '#f56565';
+
+            resultElement.innerHTML = '🔄 使用OpenAI格式流式输出测试中...';
+            await testToolWithOpenAISSE(toolName, arguments, resultElement, buttonElement);
+        }
+
+        // 使用OpenAI格式SSE测试工具
+        async function testToolWithOpenAISSE(toolName, arguments, resultElement, buttonElement) {
+            try {
+                console.log('Creating OpenAI SSE request for tool:', toolName, 'with arguments:', arguments);
+                console.log('OpenAI SSE URL:', ENDPOINTS.openaiSSE);
+
+                // 创建AbortController用于取消请求
+                const abortController = new AbortController();
+
+                const response = await fetch(ENDPOINTS.openaiSSE, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'text/event-stream',
+                        'Cache-Control': 'no-cache'
+                    },
+                    body: JSON.stringify({
+                        tool_name: toolName,
+                        arguments: arguments
+                    }),
+                    signal: abortController.signal
+                }).catch(error => {
+                    console.error('Fetch error details:', error);
+                    console.error('Error name:', error.name);
+                    console.error('Error message:', error.message);
+                    throw error;
+                });
+
+                console.log('OpenAI SSE response status:', response.status);
+                console.log('OpenAI SSE response headers:', Object.fromEntries(response.headers.entries()));
+
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                }
+
+                // 获取会话ID
+                const sessionId = response.headers.get('X-Session-ID');
+                console.log('OpenAI Session ID:', sessionId);
+
+                console.log('Starting to read OpenAI SSE stream...');
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                // 注册活跃OpenAI流式会话
+                activeOpenAIStreams.set(toolName, {
+                    sessionId: sessionId,
+                    reader: reader,
+                    abortController: abortController
+                });
+                let buffer = '';
+                let output = '';
+                let eventLog = [];
+
+                resultElement.innerHTML = '<strong>🔄 OpenAI格式SSE流式输出:</strong><div id="openai-streaming-container"><pre id="openai-streaming-output"></pre><div id="openai-event-log"></div></div>';
+                const outputElement = document.getElementById('openai-streaming-output');
+                const eventLogElement = document.getElementById('openai-event-log');
+
+                try {
+                    while (true) {
+                         const { done, value } = await reader.read();
+                         console.log('OpenAI Stream read result:', { done, valueLength: value ? value.length : 0 });
+
+                         if (done) {
+                             console.log('OpenAI Stream reading completed');
+                             break;
+                         }
+
+                         buffer += decoder.decode(value, { stream: true });
+                         console.log('OpenAI Current buffer:', buffer);
+
+                         const lines = buffer.split('\n');
+                         buffer = lines.pop(); // 保留不完整的行
+
+                    for (const line of lines) {
+                        console.log('Processing OpenAI line:', line);
+                        if (line.trim() === '') continue;
+
+                        if (line.startsWith('event:')) {
+                            const eventType = line.substring(6).trim();
+                            eventLog.push('[Event: ' + eventType + ']');
+                            console.log('OpenAI SSE Event:', eventType);
+                        } else if (line.startsWith('data:')) {
+                            const data = line.substring(5).trim();
+                            console.log('OpenAI SSE Raw Data:', data);
+                            
+                            // 处理OpenAI格式的特殊结束标记
+                            if (data === '[DONE]') {
+                                eventLog.push('[OpenAI DONE Signal]');
+                                console.log('OpenAI stream completed with DONE signal');
+                                break;
+                            }
+                            
+                            try {
+                                const eventData = JSON.parse(data);
+                                console.log('OpenAI SSE Parsed Data:', eventData);
+                                eventLog.push('[Data: ' + JSON.stringify(eventData) + ']');
+
+                                // 处理OpenAI格式的流式数据
+                                if (eventData.choices && eventData.choices[0] && eventData.choices[0].delta) {
+                                    const delta = eventData.choices[0].delta;
+                                    if (delta.content) {
+                                        output += delta.content;
+                                        outputElement.textContent = output;
+                                        outputElement.scrollTop = outputElement.scrollHeight;
+                                    }
+                                    if (delta.tool_calls) {
+                                        // 处理工具调用
+                                        output += '\n[Tool Call: ' + JSON.stringify(delta.tool_calls, null, 2) + ']\n';
+                                        outputElement.textContent = output;
+                                        outputElement.scrollTop = outputElement.scrollHeight;
+                                    }
+                                } else if (eventData.chunk) {
+                                    // 兼容原有格式
+                                    output += eventData.chunk + '\n';
+                                    outputElement.textContent = output;
+                                    outputElement.scrollTop = outputElement.scrollHeight;
+                                } else if (eventData.error) {
+                                    resultElement.className = 'result error';
+                                    resultElement.innerHTML = '<strong>❌ OpenAI SSE错误:</strong> ' + eventData.error;
+                                    return;
+                                } else {
+                                    // 显示其他类型的数据
+                                    output += JSON.stringify(eventData, null, 2) + '\n';
+                                    outputElement.textContent = output;
+                                    outputElement.scrollTop = outputElement.scrollHeight;
+                                }
+                            } catch (e) {
+                                // 如果不是JSON，直接显示原始数据
+                                output += data + '\n';
+                                outputElement.textContent = output;
+                                outputElement.scrollTop = outputElement.scrollHeight;
+                                eventLog.push('[Raw Data: ' + data + ']');
+                            }
+                        }
+
+                        // 更新事件日志
+                        eventLogElement.innerHTML = '<details><summary>OpenAI事件日志 (' + eventLog.length + ')</summary><pre>' + eventLog.join('\\n') + '</pre></details>';
+                    }
+                }
+
+                resultElement.className = 'result success';
+                if (output.trim()) {
+                    resultElement.innerHTML = '<strong>✅ OpenAI SSE成功:</strong><pre>' + output + '</pre>';
+                } else {
+                    resultElement.innerHTML = '<strong>✅ OpenAI SSE完成:</strong> OpenAI格式流式传输已完成，但没有接收到数据内容。<br>' + eventLogElement.innerHTML;
+                }
+
+                // 清理会话并恢复按钮状态
+                activeOpenAIStreams.delete(toolName);
+                buttonElement.textContent = 'OpenAI格式';
+                buttonElement.style.background = '#10b981';
+
+            } catch (streamError) {
+                    console.error('Error reading OpenAI SSE stream:', streamError);
+                    resultElement.className = 'result error';
+
+                    // 检查是否是用户主动取消
+                    if (streamError.name === 'AbortError') {
+                        resultElement.innerHTML = '<strong>🛑 已停止:</strong> OpenAI格式流式输出已被用户停止';
+                    } else {
+                        resultElement.innerHTML = '<strong>🚫 OpenAI SSE流读取失败:</strong> ' + streamError.message;
+                    }
+
+                    // 清理会话并恢复按钮状态
+                    activeOpenAIStreams.delete(toolName);
+                    buttonElement.textContent = 'OpenAI格式';
+                    buttonElement.style.background = '#10b981';
+                }
+
+            } catch (error) {
+                console.error('OpenAI SSE request failed:', error);
+                resultElement.className = 'result error';
+
+                // 检查是否是用户主动取消
+                if (error.name === 'AbortError') {
+                    resultElement.innerHTML = '<strong>🛑 已停止:</strong> OpenAI格式流式输出已被用户停止';
+                } else {
+                    resultElement.innerHTML = '<strong>🚫 OpenAI SSE请求失败:</strong> ' + error.message;
+                }
+
+                // 清理会话并恢复按钮状态
+                activeOpenAIStreams.delete(toolName);
+                buttonElement.textContent = 'OpenAI格式';
+                buttonElement.style.background = '#10b981';
             }
         }
 

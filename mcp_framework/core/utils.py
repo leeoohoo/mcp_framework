@@ -185,6 +185,22 @@ def create_port_based_config_manager(server_name: str, port: int):
     return ServerConfigManager.create_for_port(server_name, port)
 
 
+def create_default_config_manager(server_name: str):
+    """
+    创建默认配置管理器
+    
+    Args:
+        server_name: 服务器名称
+        
+    Returns:
+        ServerConfigManager 实例
+    """
+    # 延迟导入避免循环导入
+    from .config import ServerConfigManager
+    
+    return ServerConfigManager.create_default(server_name)
+
+
 def list_all_port_configs(server_name: str) -> Dict[str, Any]:
     """
     列出所有端口相关的配置信息

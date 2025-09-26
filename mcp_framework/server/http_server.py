@@ -14,6 +14,7 @@ from .handlers import MCPRequestHandler, APIHandler, ServerConfigHandler, Option
 from ..web.setup_page import SetupPageHandler
 from ..web.test_page import TestPageHandler
 from ..web.config_page import ConfigPageHandler
+from ..web.alias_page import AliasPageHandler
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,8 @@ class MCPHTTPServer:
         self.sse_handler = SSEHandler(mcp_server)  # 新增：SSE 处理器
         self.setup_page_handler = SetupPageHandler(mcp_server)
         self.test_page_handler = TestPageHandler(mcp_server)
-        self.config_page_handler = ConfigPageHandler(self.config_manager)
+        self.config_page_handler = ConfigPageHandler(self.config_manager, mcp_server)
+        self.alias_page_handler = AliasPageHandler(self.config_manager, mcp_server)
 
         self.setup_middleware()
         self.setup_routes()
@@ -71,6 +73,13 @@ class MCPHTTPServer:
         self.app.router.add_post('/api/config/reset', self.api_handler.reset_config)
         self.app.router.add_post('/api/server/restart', self.api_handler.restart_server)
 
+        # 别名管理路由
+        self.app.router.add_get('/aliases', self.alias_page_handler.serve_alias_page)
+        self.app.router.add_get('/api/aliases', self.alias_page_handler.get_aliases)
+        self.app.router.add_post('/api/aliases', self.alias_page_handler.create_alias)
+        self.app.router.add_delete('/api/aliases/{alias}', self.alias_page_handler.delete_alias)
+        self.app.router.add_delete('/api/ports/{port}', self.alias_page_handler.delete_port_config)
+
         # 服务器配置和启动路由
         self.app.router.add_get('/setup', self.setup_page_handler.serve_setup_page)
         self.app.router.add_get('/api/server/parameters', self.server_config_handler.get_server_parameters)
@@ -83,10 +92,18 @@ class MCPHTTPServer:
         self.app.router.add_post('/sse/tool/call', self.sse_handler.handle_sse_tool_call)
         self.app.router.add_get('/sse/info', self.sse_handler.handle_sse_info)
         
+        # OpenAI 格式的 SSE 路由 - 新增
+        self.app.router.add_get('/sse/openai/tool/call', self.sse_handler.handle_sse_tool_call_openai)
+        self.app.router.add_post('/sse/openai/tool/call', self.sse_handler.handle_sse_tool_call_openai)
+        
         # SSE 路由 - 兼容 /mcp 前缀
         self.app.router.add_get('/mcp/sse/tool/call', self.sse_handler.handle_sse_tool_call)
         self.app.router.add_post('/mcp/sse/tool/call', self.sse_handler.handle_sse_tool_call)
         self.app.router.add_get('/mcp/sse/info', self.sse_handler.handle_sse_info)
+        
+        # OpenAI 格式的 SSE 路由 - 兼容 /mcp 前缀
+        self.app.router.add_get('/mcp/sse/openai/tool/call', self.sse_handler.handle_sse_tool_call_openai)
+        self.app.router.add_post('/mcp/sse/openai/tool/call', self.sse_handler.handle_sse_tool_call_openai)
 
         # 流式控制路由 - 新增
         self.app.router.add_post('/api/streaming/stop', self.api_handler.stop_streaming_session)

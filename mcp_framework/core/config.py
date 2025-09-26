@@ -33,6 +33,14 @@ class ServerConfig:
         valid_fields = set(inspect.signature(cls).parameters.keys())
         filtered_data = {k: v for k, v in data.items() if k in valid_fields}
         return cls(**filtered_data)
+    
+    def update_from_dict(self, data: Dict[str, Any]) -> None:
+        """从字典更新配置"""
+        import inspect
+        valid_fields = set(inspect.signature(self.__class__).parameters.keys())
+        for key, value in data.items():
+            if key in valid_fields and hasattr(self, key):
+                setattr(self, key, value)
 
 
 @dataclass
@@ -95,18 +103,28 @@ class ConfigManager:
 class ServerConfigManager:
     """服务器配置管理器"""
 
-    def __init__(self, server_name: str, port: Optional[int] = None):
+    def __init__(self, server_name: str, port: Optional[int] = None, alias: Optional[str] = None):
         self.config_dir = get_config_dir()
         self.config_dir.mkdir(parents=True, exist_ok=True)
         
-        # 根据端口号创建不同的配置文件
-        if port is not None:
+        # 支持别名和端口号两种方式创建配置文件
+        if alias is not None:
+            # 使用别名方式
+            self.config_file = self.config_dir / f"{server_name}_alias_{alias}_server_config.json"
+            self.alias = alias
+            self.port = port  # 可选，用于记录
+        elif port is not None:
+            # 使用端口号方式（向后兼容）
             self.config_file = self.config_dir / f"{server_name}_port_{port}_server_config.json"
+            self.port = port
+            self.alias = None
         else:
+            # 默认配置文件
             self.config_file = self.config_dir / f"{server_name}_server_config.json"
+            self.port = None
+            self.alias = None
             
         self.server_name = server_name
-        self.port = port
         self.logger = logging.getLogger(f"{__name__}.ServerConfigManager")
 
     def config_exists(self) -> bool:
@@ -168,14 +186,58 @@ class ServerConfigManager:
             self.logger.error(f"删除端口 {port} 配置文件失败: {e}")
             return False
     
+    def list_alias_configs(self) -> List[str]:
+        """列出所有别名相关的配置文件"""
+        aliases = []
+        pattern = f"{self.server_name}_alias_*_server_config.json"
+        
+        for config_file in self.config_dir.glob(pattern):
+            try:
+                # 从文件名中提取别名
+                filename = config_file.stem
+                alias_part = filename.split('_alias_')[1].split('_server_config')[0]
+                aliases.append(alias_part)
+            except (IndexError, ValueError) as e:
+                self.logger.warning(f"无法解析配置文件别名: {config_file}, 错误: {e}")
+        
+        return sorted(aliases)
+    
+    def delete_alias_config(self, alias: str) -> bool:
+        """删除指定别名的配置文件"""
+        alias_config_file = self.config_dir / f"{self.server_name}_alias_{alias}_server_config.json"
+        try:
+            if alias_config_file.exists():
+                alias_config_file.unlink()
+                self.logger.info(f"已删除别名 {alias} 的配置文件: {alias_config_file}")
+                return True
+            else:
+                self.logger.warning(f"别名 {alias} 的配置文件不存在: {alias_config_file}")
+                return False
+        except Exception as e:
+            self.logger.error(f"删除别名 {alias} 配置文件失败: {e}")
+            return False
+    
+    def list_all_configs(self) -> Dict[str, Any]:
+        """列出所有配置文件（端口和别名）"""
+        return {
+            'ports': self.list_port_configs(),
+            'aliases': self.list_alias_configs(),
+            'total_configs': len(self.list_port_configs()) + len(self.list_alias_configs())
+        }
+    
     @classmethod
     def create_for_port(cls, server_name: str, port: int) -> 'ServerConfigManager':
-        """为指定端口创建配置管理器的工厂方法"""
-        return cls(server_name, port)
+        """为指定端口创建配置管理器"""
+        return cls(server_name, port=port)
+    
+    @classmethod
+    def create_for_alias(cls, server_name: str, alias: str) -> 'ServerConfigManager':
+        """为指定别名创建配置管理器"""
+        return cls(server_name, alias=alias)
     
     @classmethod
     def create_default(cls, server_name: str) -> 'ServerConfigManager':
-        """创建默认配置管理器的工厂方法"""
+        """创建默认配置管理器"""
         return cls(server_name)
 
 
@@ -207,6 +269,24 @@ class ServerConfigAdapter:
         config = ServerConfig()
         self.save_config(config)
         return config
+    
+    def load_server_config(self) -> Dict[str, Any]:
+        """直接加载配置字典，包含自定义字段"""
+        return self.server_config_manager.load_server_config()
+    
+    def save_server_config(self, config: Dict[str, Any]) -> bool:
+        """直接保存配置字典，包含自定义字段"""
+        return self.server_config_manager.save_server_config(config)
+    
+    def update_config(self, config_updates: Dict[str, Any]) -> bool:
+        """更新配置，保留现有的自定义字段"""
+        current_config = self.load_server_config()
+        current_config.update(config_updates)
+        return self.save_server_config(current_config)
+    
+    def config_exists(self) -> bool:
+        """检查配置文件是否存在"""
+        return self.server_config_manager.config_exists()
     
     @property
     def config_file(self):
