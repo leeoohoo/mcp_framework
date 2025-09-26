@@ -14,6 +14,7 @@ from .handlers import MCPRequestHandler, APIHandler, ServerConfigHandler, Option
 from ..web.setup_page import SetupPageHandler
 from ..web.test_page import TestPageHandler
 from ..web.config_page import ConfigPageHandler
+from ..web.alias_page import AliasPageHandler
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ class MCPHTTPServer:
         self.setup_page_handler = SetupPageHandler(mcp_server)
         self.test_page_handler = TestPageHandler(mcp_server)
         self.config_page_handler = ConfigPageHandler(self.config_manager, mcp_server)
+        self.alias_page_handler = AliasPageHandler(self.config_manager, mcp_server)
 
         self.setup_middleware()
         self.setup_routes()
@@ -70,6 +72,13 @@ class MCPHTTPServer:
         self.app.router.add_post('/api/config', self.api_handler.update_config)
         self.app.router.add_post('/api/config/reset', self.api_handler.reset_config)
         self.app.router.add_post('/api/server/restart', self.api_handler.restart_server)
+
+        # 别名管理路由
+        self.app.router.add_get('/aliases', self.alias_page_handler.serve_alias_page)
+        self.app.router.add_get('/api/aliases', self.alias_page_handler.get_aliases)
+        self.app.router.add_post('/api/aliases', self.alias_page_handler.create_alias)
+        self.app.router.add_delete('/api/aliases/{alias}', self.alias_page_handler.delete_alias)
+        self.app.router.add_delete('/api/ports/{port}', self.alias_page_handler.delete_port_config)
 
         # 服务器配置和启动路由
         self.app.router.add_get('/setup', self.setup_page_handler.serve_setup_page)

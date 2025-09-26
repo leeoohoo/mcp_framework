@@ -89,24 +89,33 @@ async def run_server(
             print(f"✅ 配置文件已创建: {port_config_manager.config_file}")
         else:
             print(f"📂 使用现有配置文件: {port_config_manager.config_file}")
-            # 加载现有配置并合并命令行参数
+            # 加载现有配置
             existing_config = port_config_manager.load_server_config()
             
-            # 先用ServerConfig默认值作为基础，确保所有必需字段都存在
-            default_config = config.to_dict()
-            # 然后用现有配置覆盖（保留用户自定义字段）
-            merged_config = {**default_config, **existing_config}
-            # 最后用命令行参数覆盖（命令行参数优先级最高）
-            merged_config.update({k: v for k, v in config.to_dict().items() if v is not None})
+            # 只有当命令行参数有非None值时才更新配置
+            cmd_line_updates = {k: v for k, v in config.to_dict().items() if v is not None}
             
+            # 检查是否有实际的命令行参数需要更新
+            needs_update = False
+            for key, value in cmd_line_updates.items():
+                if existing_config.get(key) != value:
+                    needs_update = True
+                    break
+            
+            if needs_update:
+                print(f"📝 检测到命令行参数变化，更新配置文件...")
+                # 只更新有变化的字段，保留所有现有字段
+                existing_config.update(cmd_line_updates)
+                port_config_manager.save_server_config(existing_config)
+            else:
+                print(f"📂 配置文件无需更新")
+            
+            # 从现有配置创建ServerConfig对象用于服务器配置
             from .config import ServerConfig
-            config = ServerConfig.from_dict(merged_config)
+            config = ServerConfig.from_dict(existing_config)
             
-            # 保存合并后的完整配置，确保配置文件包含所有必需字段
-            port_config_manager.save_server_config(merged_config)
-            
-            # 配置服务器实例，使用合并后的配置
-            server_instance.configure_server(merged_config)
+            # 配置服务器实例，使用现有配置
+            server_instance.configure_server(existing_config)
 
         # 初始化服务器
         print(f"🔧 初始化 {server_name}...")

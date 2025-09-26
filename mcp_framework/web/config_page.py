@@ -258,6 +258,12 @@ class ConfigPageHandler:
                 <div class="section-title">🌐 服务器设置</div>
 
                 <div class="form-group">
+                    <label for="alias">服务器别名</label>
+                    <input type="text" id="alias" name="alias" placeholder="例如: data-server">
+                    <div class="help-text">为服务器实例设置别名，用于多实例管理和客户端连接</div>
+                </div>
+
+                <div class="form-group">
                     <label for="host">服务器地址</label>
                     <input type="text" id="host" name="host" placeholder="0.0.0.0" value="0.0.0.0" disabled>
                     <div class="help-text">固定为 0.0.0.0 以监听所有网络接口，允许外部访问</div>
@@ -331,6 +337,7 @@ class ConfigPageHandler:
         </form>
 
         <div class="navigation">
+            <a href="/aliases" class="nav-link">🏷️ 别名管理</a>
             <a href="/setup" class="nav-link">🚀 服务器设置</a>
             <a href="/test" class="nav-link">🧪 测试页面</a>
             <a href="/health" class="nav-link">💚 健康检查</a>
@@ -372,6 +379,7 @@ class ConfigPageHandler:
             container.innerHTML = '';
 
             const configItems = [
+                { key: 'alias', label: '服务器别名', value: config.alias || '未设置' },
                 { key: 'host', label: '服务器地址', value: config.host },
                 { key: 'port', label: '端口号', value: config.port },
                 { key: 'log_level', label: '日志级别', value: config.log_level },

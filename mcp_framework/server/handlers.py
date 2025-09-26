@@ -787,9 +787,16 @@ class APIHandler:
             })
 
     async def get_config(self, request):
-        """获取配置"""
+        """获取当前配置"""
         config = self.config_manager.load_config()
-        return web.json_response(config.to_dict())
+        config_dict = config.to_dict()
+        
+        # 如果使用的是 ServerConfigAdapter，添加别名信息
+        if hasattr(self.config_manager, 'server_config_manager'):
+            server_config_manager = self.config_manager.server_config_manager
+            config_dict['alias'] = getattr(server_config_manager, 'alias', None)
+        
+        return web.json_response(config_dict)
 
     async def update_config(self, request):
         """更新配置"""
@@ -800,6 +807,9 @@ class APIHandler:
             current_config = self.config_manager.load_config()
             old_config_dict = current_config.to_dict()
 
+            # 分离别名和其他配置项
+            alias_value = data.pop('alias', None)
+            
             # 更新配置
             for key, value in data.items():
                 if hasattr(current_config, key):
@@ -807,6 +817,12 @@ class APIHandler:
 
             # 保存配置
             if self.config_manager.save_config(current_config):
+                # 如果有别名更新且使用的是 ServerConfigAdapter，更新别名
+                if alias_value is not None and hasattr(self.config_manager, 'server_config_manager'):
+                    server_config_manager = self.config_manager.server_config_manager
+                    server_config_manager.alias = alias_value
+                    self.logger.info(f"别名已更新为: {alias_value}")
+                
                 # 通知MCP服务器配置更新（如果配置项与服务器参数相关）
                 new_config_dict = current_config.to_dict()
                 if hasattr(self.mcp_server, '_notify_config_update'):

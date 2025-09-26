@@ -32,6 +32,9 @@ class BaseMCPServer(ABC):
 
         # 服务器运行时配置
         self.server_config: Dict[str, Any] = {}
+        
+        # 完整的配置数据（包括自定义字段）
+        self.full_config: Dict[str, Any] = {}
 
         # 注意：不在这里创建配置管理器，因为它应该由启动器根据端口创建
         # 这避免了创建没有端口号的默认配置文件
@@ -334,10 +337,14 @@ class BaseMCPServer(ABC):
             # 保存旧配置用于回调通知
             old_config = self.server_config.copy()
             
+            # 保存完整的配置数据
+            self.full_config = config.copy()
+            
             # 验证配置参数
             parameters = self.get_server_parameters()
             param_dict = {p.name: p for p in parameters}
 
+            # 更新server_config中的标准参数
             for key, value in config.items():
                 if key in param_dict:
                     param = param_dict[key]
@@ -362,9 +369,9 @@ class BaseMCPServer(ABC):
                         self.logger.error(f"Required parameter missing: {param.name}")
                         return False
 
-            # 保存配置
-            if self.server_config_manager.save_server_config(self.server_config):
-                self.logger.info(f"Server configured and saved: {self.server_config}")
+            # 保存完整的配置字典（包含自定义字段），而不是只保存server_config
+            if self.server_config_manager.save_server_config(config):
+                self.logger.info(f"Server configured and saved: {config}")
                 
                 # 通知配置更新回调
                 self._notify_config_update(old_config, self.server_config.copy())
@@ -379,8 +386,67 @@ class BaseMCPServer(ABC):
             return False
 
     def get_config_value(self, key: str, default=None):
-        """获取配置值"""
-        return self.server_config.get(key, default)
+        """获取配置值
+        
+        支持以下几种访问方式：
+        1. 直接访问标准参数：get_config_value('project_root')
+        2. 访问嵌套字段：get_config_value('custom_params.max_file_size')
+        3. 访问顶级自定义字段：get_config_value('user_settings')
+        4. 自动搜索所有嵌套对象：get_config_value('project_root') 会自动查找 custom_params.project_root
+        """
+        # 首先检查标准参数
+        if key in self.server_config:
+            return self.server_config[key]
+        
+        # 然后检查完整配置中的顶级字段
+        if key in self.full_config:
+            return self.full_config[key]
+        
+        # 支持点号分隔的嵌套访问（保持向后兼容）
+        if '.' in key:
+            keys = key.split('.')
+            value = self.full_config
+            try:
+                for k in keys:
+                    value = value[k]
+                return value
+            except (KeyError, TypeError):
+                pass
+        else:
+            # 如果是简单键名，自动搜索所有嵌套对象
+            found_value = self._search_nested_config(self.full_config, key)
+            if found_value is not None:
+                return found_value
+        
+        return default
+    
+    def _search_nested_config(self, config_dict: Dict[str, Any], target_key: str) -> Any:
+        """递归搜索嵌套配置中的指定键
+        
+        Args:
+            config_dict: 要搜索的配置字典
+            target_key: 目标键名
+            
+        Returns:
+            找到的值，如果没找到返回 None
+        """
+        if not isinstance(config_dict, dict):
+            return None
+            
+        # 遍历当前层级的所有键值对
+        for key, value in config_dict.items():
+            # 如果当前值是字典，递归搜索
+            if isinstance(value, dict):
+                # 首先检查这个嵌套字典中是否直接包含目标键
+                if target_key in value:
+                    return value[target_key]
+                
+                # 如果没有直接找到，继续递归搜索更深层级
+                nested_result = self._search_nested_config(value, target_key)
+                if nested_result is not None:
+                    return nested_result
+        
+        return None
 
     def register_config_update_callback(self, callback: Callable[[Dict[str, Any], Dict[str, Any]], None]) -> None:
         """注册配置更新回调函数
@@ -592,6 +658,22 @@ class BaseMCPServer(ABC):
     async def startup(self) -> None:
         """服务器启动时调用"""
         if not self._initialized:
+            # 检查是否有外部设置的配置管理器，如果有则重新加载配置
+            if hasattr(self, 'server_config_manager') and self.server_config_manager is not None:
+                try:
+                    print(f"🔍 检查外部配置管理器: {self.server_config_manager.config_file}")
+                    if self.server_config_manager.config_exists():
+                        config = self.server_config_manager.load_server_config()
+                        print(f"📂 加载的配置内容: {config}")
+                        result = self.configure_server(config)
+                        print(f"⚙️ 配置应用结果: {result}")
+                        self.logger.info(f"Reloaded configuration from external config manager: {self.server_config_manager.config_file}")
+                    else:
+                        print(f"❌ 配置文件不存在: {self.server_config_manager.config_file}")
+                except Exception as e:
+                    print(f"❌ 配置加载失败: {e}")
+                    self.logger.warning(f"Failed to reload config from external config manager: {e}")
+            
             await self.initialize()
             self._initialized = True
             self.logger.info(
@@ -613,7 +695,7 @@ class BaseMCPServer(ABC):
 class EnhancedMCPServer(BaseMCPServer):
     """增强版MCP服务器，支持装饰器和自动工具分发"""
 
-    def __init__(self, name: str, version: str = "1.0.0", description: str = ""):
+    def __init__(self, name: str, version: str = "1.0.0", description: str = "", config_manager=None):
         super().__init__(name, version, description)
         self._tool_handlers: Dict[str, Callable] = {}
         self._stream_handlers: Dict[str, Callable] = {}
@@ -622,6 +704,21 @@ class EnhancedMCPServer(BaseMCPServer):
         # 创建装饰器实例
         from .decorators import AnnotatedDecorators
         self.decorators = AnnotatedDecorators(self)
+        
+        # 如果提供了配置管理器，使用它；否则自动加载配置
+        if config_manager:
+            self.server_config_manager = config_manager
+            # 尝试加载配置
+            config = self.server_config_manager.load_server_config()
+            if config:
+                self.configure_server(config)
+                self.logger.info(f"Loaded configuration from provided config manager for server '{self.name}'")
+            else:
+                self._apply_default_config()
+                self.logger.info(f"Applied default configuration for server '{self.name}' (no config file found)")
+        else:
+            # 自动加载配置
+            self._auto_load_config()
 
     def register_tool(self, name: str, description: str, input_schema: Dict[str, Any],
                       handler: Callable, chunk_size: int = 100,
@@ -834,6 +931,60 @@ class EnhancedMCPServer(BaseMCPServer):
     def resource(self, uri: str, name: str = None, description: str = None, mime_type: str = 'text/plain'):
         """资源装饰器"""
         return self.decorators.resource(uri=uri, name=name, description=description, mime_type=mime_type)
+    
+    def _auto_load_config(self):
+        """自动加载配置"""
+        try:
+            # 创建配置管理器
+            if not self.server_config_manager:
+                self.server_config_manager = ServerConfigManager(self.name)
+            
+            # 尝试加载现有配置
+            config = self.server_config_manager.load_server_config()
+            
+            if config:
+                # 如果有配置文件，使用配置文件的值
+                self.configure_server(config)
+                self.logger.info(f"Loaded configuration from file for server '{self.name}'")
+            else:
+                # 如果没有配置文件，使用服务器参数的默认值
+                self._apply_default_config()
+                self.logger.info(f"Applied default configuration for server '{self.name}'")
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to auto-load config for server '{self.name}': {e}")
+            # 即使加载失败，也尝试应用默认配置
+            self._apply_default_config()
+    
+    def _apply_default_config(self):
+        """应用服务器参数的默认值"""
+        try:
+            # 获取服务器参数定义
+            parameters = self.get_server_parameters()
+            
+            # 构建默认配置
+            custom_params = {}
+            for param in parameters:
+                if param.default_value is not None:
+                    custom_params[param.name] = param.default_value
+            
+            if custom_params:
+                # 构建完整的配置结构，包含custom_params
+                default_config = {
+                    "custom_params": custom_params
+                }
+                
+                # 应用默认配置
+                result = self.configure_server(default_config)
+                if result:
+                    self.logger.info(f"Applied and saved default values for {len(custom_params)} parameters")
+                else:
+                    self.logger.warning("Failed to save default configuration")
+            else:
+                self.logger.info("No default values to apply")
+                
+        except Exception as e:
+            self.logger.error(f"Failed to apply default config: {e}")
 
     def server_param(self, name: str):
         """服务器参数装饰器"""
