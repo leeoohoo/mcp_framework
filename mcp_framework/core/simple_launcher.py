@@ -115,7 +115,7 @@ class SimpleLauncher:
         
         config_info = f" 配置目录: {config_dir}" if config_dir else ""
         print(f"🚀 启动 {server_name} ({mode_info[mode]})" + 
-              (f" 别名: {alias}" if alias else "") + config_info + "...")
+              (f" 别名: {alias}" if alias else "") + config_info + "...", file=sys.stderr)
         
         # 准备 custom_args 来传递 config_dir
         custom_args = {}

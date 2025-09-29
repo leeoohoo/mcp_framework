@@ -358,6 +358,9 @@ def run_stdio_server_main(
     """仅stdio服务器启动"""
     custom_args = {}
     
+    # stdio模式下，所有调试信息输出到stderr，避免干扰JSON-RPC通信
+    output_stream = sys.stderr
+    
     # 如果提供了别名，在框架内部创建配置管理器
     if alias:
         try:
@@ -365,18 +368,18 @@ def run_stdio_server_main(
             server_config_manager = ServerConfigManager.create_for_alias(server_name, alias, custom_config_dir=config_dir)
             config_manager = ServerConfigAdapter(server_config_manager)
             custom_args["config_manager"] = config_manager
-            print(f"✅ 别名配置管理器已创建: {alias}")
+            print(f"✅ 别名配置管理器已创建: {alias}", file=output_stream)
             
             # 立即设置到服务器实例，确保在服务器启动前配置管理器已就位
             if isinstance(config_manager, ServerConfigAdapter):
                 server_instance.server_config_manager = config_manager.server_config_manager
-                print(f"📂 预设别名配置管理器: {config_manager.server_config_manager.config_file}")
+                print(f"📂 预设别名配置管理器: {config_manager.server_config_manager.config_file}", file=output_stream)
             else:
                 server_instance.server_config_manager = config_manager
-                print(f"📂 预设配置管理器: {config_manager.config_file}")
+                print(f"📂 预设配置管理器: {config_manager.config_file}", file=output_stream)
                 
         except Exception as e:
-            print(f"⚠️ 别名配置管理器创建失败: {e}")
+            print(f"⚠️ 别名配置管理器创建失败: {e}", file=output_stream)
     elif config_manager:
         # 如果直接提供了配置管理器，使用它
         custom_args["config_manager"] = config_manager
@@ -384,10 +387,10 @@ def run_stdio_server_main(
         # 立即设置到服务器实例
         if hasattr(config_manager, 'server_config_manager'):
             server_instance.server_config_manager = config_manager.server_config_manager
-            print(f"📂 预设配置管理器: {config_manager.server_config_manager.config_file}")
+            print(f"📂 预设配置管理器: {config_manager.server_config_manager.config_file}", file=output_stream)
         else:
             server_instance.server_config_manager = config_manager
-            print(f"📂 预设配置管理器: {config_manager.config_file}")
+            print(f"📂 预设配置管理器: {config_manager.config_file}", file=output_stream)
     elif config_dir:
         # 如果提供了 config_dir 但没有别名，创建默认配置管理器
         try:
@@ -396,14 +399,14 @@ def run_stdio_server_main(
             server_config_manager = create_default_config_manager(server_name, config_dir)
             config_manager = ServerConfigAdapter(server_config_manager)
             custom_args["config_manager"] = config_manager
-            print(f"✅ 自定义目录配置管理器已创建: {config_dir}")
+            print(f"✅ 自定义目录配置管理器已创建: {config_dir}", file=output_stream)
             
             # 立即设置到服务器实例
             server_instance.server_config_manager = server_config_manager
-            print(f"📂 预设自定义目录配置管理器: {server_config_manager.config_file}")
+            print(f"📂 预设自定义目录配置管理器: {server_config_manager.config_file}", file=output_stream)
                 
         except Exception as e:
-            print(f"⚠️ 自定义目录配置管理器创建失败: {e}")
+            print(f"⚠️ 自定义目录配置管理器创建失败: {e}", file=output_stream)
             # 如果创建失败，仍然传递 config_dir 到 custom_args 作为备用
             custom_args["config_dir"] = config_dir
     

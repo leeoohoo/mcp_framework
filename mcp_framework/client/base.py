@@ -278,6 +278,17 @@ class MCPStdioClient:
                     line_text.startswith('📁') or 
                     line_text.startswith('📡') or 
                     line_text.startswith('👋') or
+                    line_text.startswith('Required parameter') or
+                    line_text.startswith('Failed to') or
+                    line_text.startswith('发送EOF') or
+                    line_text.startswith('按 Ctrl+C') or
+                    line_text.startswith('Cannot connect to host') or
+                    line_text.startswith('•') or  # 列表项
+                    line_text.startswith('  •') or  # 缩进的列表项
+                    line_text.startswith('    -') or  # 缩进的子项
+                    line_text.startswith('  -') or  # 缩进的子项
+                    line_text.startswith('- ') or  # 列表项
+                    line_text.strip() == '' or  # 空行
                     not line_text.startswith('{')):
                     continue
                 

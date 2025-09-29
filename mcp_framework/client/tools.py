@@ -6,7 +6,7 @@ MCP 工具调用客户端
 import json
 import asyncio
 from typing import Dict, Any, List, Optional, AsyncGenerator
-from .base import MCPStdioClient
+from .enhanced import EnhancedMCPStdioClient
 
 
 class Tool:
@@ -21,7 +21,7 @@ class Tool:
         return f"Tool(name='{self.name}', description='{self.description}')"
 
 
-class ToolsClient(MCPStdioClient):
+class ToolsClient(EnhancedMCPStdioClient):
     """MCP 工具调用客户端"""
     
     def __init__(self, 

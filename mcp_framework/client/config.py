@@ -4,10 +4,10 @@ MCP 配置管理客户端
 """
 
 from typing import Dict, Any, Optional
-from .base import MCPStdioClient
+from .enhanced import EnhancedMCPStdioClient
 
 
-class ConfigClient(MCPStdioClient):
+class ConfigClient(EnhancedMCPStdioClient):
     """MCP 配置管理客户端"""
     
     async def get_config(self) -> Dict[str, Any]:

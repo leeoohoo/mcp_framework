@@ -11,7 +11,7 @@ from pathlib import Path
 # 添加框架路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from mcp_framework import MCPStdioClient, ConfigClient, ToolsClient
+from mcp_framework import EnhancedMCPStdioClient, ConfigClient, ToolsClient
 
 
 async def basic_client_example():
@@ -19,11 +19,12 @@ async def basic_client_example():
     print("🔧 基础客户端使用示例")
     print("=" * 50)
     
-    # 使用基础客户端
-    async with MCPStdioClient(
-        server_script="file_write_server.py",
+    # 使用增强版客户端
+    async with EnhancedMCPStdioClient(
+        server_script="../expert_stream_server/expert_stream_server.py",
         alias="test_no_config",
-        startup_timeout=3.0
+        startup_timeout=3.0,
+        debug_mode=False  # 可以设置为True查看详细调试信息
     ) as client:
         
         # 发送自定义请求
