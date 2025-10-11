@@ -419,8 +419,14 @@ class MCPServerBuilder:
         package_dir = self.dist_dir / package_name
         package_dir.mkdir(exist_ok=True)
 
-        # 复制可执行文件
-        shutil.copy2(exe_path, package_dir / exe_name)
+        # 复制可执行文件或目录（支持 onedir 模式）
+        target_exec = package_dir / exe_name
+        if exe_path.is_dir():
+            # onedir：复制整个目录
+            shutil.copytree(exe_path, target_exec, dirs_exist_ok=True)
+        else:
+            # onefile：复制单个可执行文件
+            shutil.copy2(exe_path, target_exec)
 
         # 创建 requirements.txt
         self.create_complete_requirements(script_path, package_dir)
@@ -458,21 +464,24 @@ class MCPServerBuilder:
 
     def create_startup_scripts(self, package_dir: Path, exe_name: str):
         """创建启动脚本"""
+        is_onedir = (package_dir / exe_name).is_dir()
         # Windows 批处理文件
         if platform.system() == "Windows":
+            inner = f"{exe_name}\\{exe_name}.exe" if is_onedir else f"{exe_name}.exe"
             bat_content = f"""@echo off
 echo Starting MCP Server...
-"{exe_name}" %*
+"{inner}" %*
 pause
 """
             with open(package_dir / "start.bat", "w") as f:
                 f.write(bat_content)
 
         # Unix shell 脚本
+        inner_unix = f"./{exe_name}/{exe_name}" if is_onedir else f"./{exe_name}"
         sh_content = f"""#!/bin/bash
 echo Starting MCP Server...
 cd "$(dirname "$0")"
-./{exe_name} "$@"
+{inner_unix} "$@"
 """
         sh_file = package_dir / "start.sh"
         with open(sh_file, "w") as f:
@@ -481,7 +490,15 @@ cd "$(dirname "$0")"
         # 设置执行权限
         if platform.system() != "Windows":
             os.chmod(sh_file, 0o755)
-            os.chmod(package_dir / exe_name, 0o755)
+            # 设置内部二进制可执行权限（onedir 与 onefile 区分）
+            try:
+                if is_onedir:
+                    os.chmod(package_dir / exe_name / exe_name, 0o755)
+                else:
+                    os.chmod(package_dir / exe_name, 0o755)
+            except Exception:
+                # 忽略权限设置错误以提高兼容性
+                pass
 
     def create_archive(self, package_dir: Path) -> Path:
         """创建压缩包"""

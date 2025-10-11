@@ -187,22 +187,17 @@ async def run_multi_transport_server(
             
         # 配置stdio传输（如果需要）
         if TransportType.STDIO in transport_types:
-            # 如果 args 还没有定义（只有 stdio 传输时），解析命令行参数
-            if 'args' not in locals():
-                args = parse_command_line_args(
-                    server_name=server_name,
-                    default_port=default_port,
-                    default_host=default_host
-                )
-            
             # 从自定义参数中获取配置管理器，或者创建默认的
             stdio_config_manager = None
+            config_dir = None
+            if custom_args and "config_dir" in custom_args:
+                config_dir = custom_args["config_dir"]
             if custom_args and "config_manager" in custom_args:
                 stdio_config_manager = custom_args["config_manager"]
                 print(f"📂 使用别名配置管理器: {stdio_config_manager.config_file}", file=output_stream)
             else:
-                # 如果没有提供配置管理器，创建一个默认的
-                stdio_config_manager = create_default_config_manager(server_name, args.get('config_dir'))
+                # 如果没有提供配置管理器，创建一个默认的，仅使用传入的config_dir或默认目录
+                stdio_config_manager = create_default_config_manager(server_name, config_dir)
                 print(f"📂 使用默认配置管理器: {stdio_config_manager.config_file}", file=output_stream)
                 
             # 如果还没有设置服务器配置管理器，设置它
@@ -357,6 +352,9 @@ def run_stdio_server_main(
 ) -> None:
     """仅stdio服务器启动"""
     custom_args = {}
+    # 提前传递 config_dir 给下游，避免在纯stdio模式下解析命令行参数
+    if config_dir:
+        custom_args["config_dir"] = config_dir
     
     # stdio模式下，所有调试信息输出到stderr，避免干扰JSON-RPC通信
     output_stream = sys.stderr

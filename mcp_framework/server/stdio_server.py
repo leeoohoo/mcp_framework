@@ -144,7 +144,7 @@ class MCPStdioServer:
             if method == "initialize":
                 result = await self._handle_initialize(params)
             elif method == "tools/list":
-                result = await self._handle_tools_list()
+                result = await self._handle_tools_list(params)
             elif method == "tools/call":
                 result = await self._handle_tool_call(params)
             elif method == "resources/list":
@@ -372,11 +372,29 @@ class MCPStdioServer:
         }
         await self._send_response(message)
     
-    async def _handle_tools_list(self) -> Dict[str, Any]:
-        """处理工具列表请求"""
-        return {
-            "tools": self.mcp_server.tools
-        }
+    async def _handle_tools_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """处理工具列表请求，支持 role 参数过滤"""
+        role = params.get("role") if isinstance(params, dict) else None
+        if role:
+            filtered_tools = []
+            for tool in self.mcp_server.tools:
+                # 新格式：roles 为列表
+                if 'roles' in tool and tool['roles']:
+                    if role in tool['roles']:
+                        filtered_tools.append(tool)
+                # 旧格式：role 为单值
+                elif tool.get('role') == role:
+                    filtered_tools.append(tool)
+                # 通用工具：没有角色限制
+                elif tool.get('role') is None and tool.get('roles') is None:
+                    filtered_tools.append(tool)
+            return {
+                "tools": filtered_tools
+            }
+        else:
+            return {
+                "tools": self.mcp_server.tools
+            }
     
     async def _handle_tool_call(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """处理工具调用请求"""
