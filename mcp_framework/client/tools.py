@@ -6,7 +6,7 @@ MCP 工具调用客户端
 import json
 import asyncio
 from typing import Dict, Any, List, Optional, AsyncGenerator
-from .base import MCPStdioClient
+from .enhanced import EnhancedMCPStdioClient
 
 
 class Tool:
@@ -21,12 +21,13 @@ class Tool:
         return f"Tool(name='{self.name}', description='{self.description}')"
 
 
-class ToolsClient(MCPStdioClient):
+class ToolsClient(EnhancedMCPStdioClient):
     """MCP 工具调用客户端"""
     
     def __init__(self, 
                  server_script: str,
                  alias: Optional[str] = None,
+                 config_dir: Optional[str] = None,
                  server_args: Optional[List[str]] = None,
                  client_name: str = "mcp-framework-client",
                  client_version: str = "1.0.0",
@@ -38,6 +39,7 @@ class ToolsClient(MCPStdioClient):
         Args:
             server_script: 服务器脚本路径
             alias: 服务器别名（重要参数，用于多实例管理）
+            config_dir: 自定义配置目录路径（可选）
             server_args: 额外的服务器参数
             client_name: 客户端名称
             client_version: 客户端版本
@@ -47,6 +49,7 @@ class ToolsClient(MCPStdioClient):
         super().__init__(
             server_script=server_script,
             alias=alias,
+            config_dir=config_dir,
             server_args=server_args,
             client_name=client_name,
             client_version=client_version,
@@ -62,7 +65,7 @@ class ToolsClient(MCPStdioClient):
         if not self.is_initialized:
             await self.initialize()
     
-    async def list_tools(self, force_refresh: bool = False) -> List[Tool]:
+    async def list_tools(self, force_refresh: bool = False, role: Optional[str] = None) -> List[Tool]:
         """
         获取可用工具列表
         
@@ -81,7 +84,10 @@ class ToolsClient(MCPStdioClient):
         if self._tools_cache is not None and not force_refresh:
             return self._tools_cache
         
-        response = await self.send_request("tools/list")
+        params = {}
+        if role:
+            params["role"] = role
+        response = await self.send_request("tools/list", params if params else None)
         
         if "error" in response:
             raise Exception(f"获取工具列表失败: {response['error']}")
@@ -103,7 +109,7 @@ class ToolsClient(MCPStdioClient):
         self._tools_cache = tools
         return tools
     
-    async def get_tool(self, tool_name: str) -> Optional[Tool]:
+    async def get_tool(self, tool_name: str, role: Optional[str] = None) -> Optional[Tool]:
         """
         获取特定工具的信息
         
@@ -113,7 +119,7 @@ class ToolsClient(MCPStdioClient):
         Returns:
             Optional[Tool]: 工具对象，如果不存在则返回 None
         """
-        tools = await self.list_tools()
+        tools = await self.list_tools(role=role)
         
         for tool in tools:
             if tool.name == tool_name:
@@ -149,7 +155,7 @@ class ToolsClient(MCPStdioClient):
         
         return response.get("result", {})
     
-    async def tool_exists(self, tool_name: str) -> bool:
+    async def tool_exists(self, tool_name: str, role: Optional[str] = None) -> bool:
         """
         检查工具是否存在
         
@@ -159,17 +165,17 @@ class ToolsClient(MCPStdioClient):
         Returns:
             bool: 工具是否存在
         """
-        tool = await self.get_tool(tool_name)
+        tool = await self.get_tool(tool_name, role=role)
         return tool is not None
     
-    async def get_tool_names(self) -> List[str]:
+    async def get_tool_names(self, role: Optional[str] = None) -> List[str]:
         """
         获取所有工具名称列表
         
         Returns:
             List[str]: 工具名称列表
         """
-        tools = await self.list_tools()
+        tools = await self.list_tools(role=role)
         return [tool.name for tool in tools]
     
     async def call_tool_stream(self, tool_name: str, arguments: Dict[str, Any]) -> AsyncGenerator[str, None]:

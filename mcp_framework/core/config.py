@@ -60,8 +60,8 @@ class ServerParameter:
 class ConfigManager:
     """配置管理器"""
 
-    def __init__(self, config_name: str = "server_config.json"):
-        self.config_dir = get_config_dir()
+    def __init__(self, config_name: str = "server_config.json", custom_config_dir: Optional[str] = None):
+        self.config_dir = get_config_dir(custom_config_dir)
         self.config_dir.mkdir(parents=True, exist_ok=True)
         self.config_file = self.config_dir / config_name
         self.logger = logging.getLogger(f"{__name__}.ConfigManager")
@@ -103,8 +103,8 @@ class ConfigManager:
 class ServerConfigManager:
     """服务器配置管理器"""
 
-    def __init__(self, server_name: str, port: Optional[int] = None, alias: Optional[str] = None):
-        self.config_dir = get_config_dir()
+    def __init__(self, server_name: str, port: Optional[int] = None, alias: Optional[str] = None, custom_config_dir: Optional[str] = None):
+        self.config_dir = get_config_dir(custom_config_dir)
         self.config_dir.mkdir(parents=True, exist_ok=True)
         
         # 支持别名和端口号两种方式创建配置文件
@@ -226,19 +226,19 @@ class ServerConfigManager:
         }
     
     @classmethod
-    def create_for_port(cls, server_name: str, port: int) -> 'ServerConfigManager':
+    def create_for_port(cls, server_name: str, port: int, custom_config_dir: Optional[str] = None) -> 'ServerConfigManager':
         """为指定端口创建配置管理器"""
-        return cls(server_name, port=port)
+        return cls(server_name, port=port, custom_config_dir=custom_config_dir)
     
     @classmethod
-    def create_for_alias(cls, server_name: str, alias: str) -> 'ServerConfigManager':
+    def create_for_alias(cls, server_name: str, alias: str, custom_config_dir: Optional[str] = None) -> 'ServerConfigManager':
         """为指定别名创建配置管理器"""
-        return cls(server_name, alias=alias)
+        return cls(server_name, alias=alias, custom_config_dir=custom_config_dir)
     
     @classmethod
-    def create_default(cls, server_name: str) -> 'ServerConfigManager':
+    def create_default(cls, server_name: str, custom_config_dir: Optional[str] = None) -> 'ServerConfigManager':
         """创建默认配置管理器"""
-        return cls(server_name)
+        return cls(server_name, custom_config_dir=custom_config_dir)
 
 
 class ServerConfigAdapter:

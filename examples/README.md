@@ -65,7 +65,7 @@ python examples/sdk_tools_test.py
    # 手动处理 JSON-RPC...
    
    # SDK 代码
-   async with MCPStdioClient("server.py") as client:
+   async with EnhancedMCPStdioClient("server.py") as client:
        # 自动处理连接
    ```
 

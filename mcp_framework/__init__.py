@@ -57,6 +57,7 @@ from .server.http_server import MCPHTTPServer
 # 客户端 SDK
 from .client import (
     MCPStdioClient,
+    EnhancedMCPStdioClient,
     ConfigClient,
     ToolsClient
 )
@@ -108,6 +109,7 @@ __all__ = [
     
     # 客户端 SDK
     'MCPStdioClient',
+    'EnhancedMCPStdioClient',
     'ConfigClient',
     'ToolsClient'
 ]

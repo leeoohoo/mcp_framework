@@ -713,15 +713,16 @@ if __name__ == "__main__":
 ```python
 #!/usr/bin/env python3
 import asyncio
-from mcp_framework import MCPStdioClient, ToolsClient
+from mcp_framework import EnhancedMCPStdioClient, ToolsClient
 
 async def call_stdio_server():
     """调用stdio服务器示例"""
     
-    # 方式1：使用基础客户端
-    async with MCPStdioClient(
+    # 方式1：使用增强版客户端（推荐）
+    async with EnhancedMCPStdioClient(
         server_script="stdio_server.py",
-        startup_timeout=5.0
+        startup_timeout=5.0,
+        debug_mode=False  # 可设置为True查看详细调试信息
     ) as client:
         # 获取工具列表
         tools = await client.send_request("tools/list")
@@ -1209,15 +1210,16 @@ server = EnhancedMCPServer(
 
 ## 📱 客户端 SDK
 
-### MCPStdioClient - 基础客户端
+### EnhancedMCPStdioClient - 增强版客户端（推荐）
 
 ```python
-from mcp_framework import MCPStdioClient
+from mcp_framework import EnhancedMCPStdioClient
 
-async with MCPStdioClient(
+async with EnhancedMCPStdioClient(
     server_script="server.py",
     alias="my_server",
-    startup_timeout=5.0
+    startup_timeout=5.0,
+    debug_mode=False  # 可设置为True查看详细调试信息
 ) as client:
     # 发送原始请求
     response = await client.send_request("tools/list")

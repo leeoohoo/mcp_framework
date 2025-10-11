@@ -21,6 +21,7 @@ class SimpleClient:
     def __init__(self, 
                  server_script: str,
                  alias: Optional[str] = None,
+                 config_dir: Optional[str] = None,
                  **kwargs):
         """
         初始化简化客户端
@@ -28,10 +29,12 @@ class SimpleClient:
         Args:
             server_script: 服务器脚本路径
             alias: 服务器别名（可选）
+            config_dir: 自定义配置目录路径（可选）
             **kwargs: 其他可选参数（如超时时间等）
         """
         self.server_script = server_script
         self.alias = alias
+        self.config_dir = config_dir
         self.kwargs = kwargs
         self._client = None
         self._is_ready = False
@@ -42,6 +45,7 @@ class SimpleClient:
             self._client = ToolsClient(
                 server_script=self.server_script,
                 alias=self.alias,
+                config_dir=self.config_dir,
                 **self.kwargs
             )
             await self._client.connect()
@@ -50,7 +54,7 @@ class SimpleClient:
     
     # ==================== 工具相关方法 ====================
     
-    async def tools(self) -> List[str]:
+    async def tools(self, role: Optional[str] = None) -> List[str]:
         """
         获取所有可用工具名称
         
@@ -58,7 +62,7 @@ class SimpleClient:
             List[str]: 工具名称列表
         """
         await self._ensure_ready()
-        return await self._client.get_tool_names()
+        return await self._client.get_tool_names(role=role)
     
     async def call(self, tool_name: str, **kwargs) -> Dict[str, Any]:
         """
@@ -74,7 +78,7 @@ class SimpleClient:
         await self._ensure_ready()
         return await self._client.call_tool(tool_name, kwargs)
     
-    async def tool_info(self, tool_name: str) -> Optional[Tool]:
+    async def tool_info(self, tool_name: str, role: Optional[str] = None) -> Optional[Tool]:
         """
         获取工具信息
         
@@ -85,9 +89,9 @@ class SimpleClient:
             Optional[Tool]: 工具信息，如果不存在则返回 None
         """
         await self._ensure_ready()
-        return await self._client.get_tool(tool_name)
+        return await self._client.get_tool(tool_name, role=role)
     
-    async def has_tool(self, tool_name: str) -> bool:
+    async def has_tool(self, tool_name: str, role: Optional[str] = None) -> bool:
         """
         检查是否有指定工具
         
@@ -98,7 +102,7 @@ class SimpleClient:
             bool: 是否存在该工具
         """
         await self._ensure_ready()
-        return await self._client.tool_exists(tool_name)
+        return await self._client.tool_exists(tool_name, role=role)
     
     async def call_stream(self, tool_name: str, **kwargs) -> AsyncGenerator[str, None]:
         """
@@ -133,6 +137,7 @@ class SimpleClient:
             config_client = ConfigClient(
                 server_script=self.server_script,
                 alias=self.alias,
+                config_dir=self.config_dir,
                 **self.kwargs
             )
             async with config_client:
@@ -156,6 +161,7 @@ class SimpleClient:
             config_client = ConfigClient(
                 server_script=self.server_script,
                 alias=self.alias,
+                config_dir=self.config_dir,
                 **self.kwargs
             )
             async with config_client:
@@ -179,6 +185,7 @@ class SimpleClient:
             config_client = ConfigClient(
                 server_script=self.server_script,
                 alias=self.alias,
+                config_dir=self.config_dir,
                 **self.kwargs
             )
             async with config_client:
@@ -201,6 +208,7 @@ class SimpleClient:
             config_client = ConfigClient(
                 server_script=self.server_script,
                 alias=self.alias,
+                config_dir=self.config_dir,
                 **self.kwargs
             )
             async with config_client:
@@ -226,7 +234,16 @@ class SimpleClient:
         """析构函数"""
         if self._client:
             try:
-                asyncio.create_task(self._client.disconnect())
+                # 仅当存在运行中的事件循环时才调度异步清理
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._client.disconnect())
+            except RuntimeError:
+                # 无运行中的事件循环，避免创建未await的协程，做同步兜底清理
+                try:
+                    if getattr(self._client, "process", None) and self._client.process.returncode is None:
+                        self._client.process.terminate()
+                except:
+                    pass
             except:
                 pass
 
@@ -236,6 +253,7 @@ class SimpleClient:
 async def quick_call(server_script: str, 
                     tool_name: str, 
                     alias: Optional[str] = None,
+                    config_dir: Optional[str] = None,
                     **tool_args) -> Dict[str, Any]:
     """
     快速调用工具（一行代码完成）
@@ -244,18 +262,20 @@ async def quick_call(server_script: str,
         server_script: 服务器脚本路径
         tool_name: 工具名称
         alias: 服务器别名（可选）
+        config_dir: 自定义配置目录路径（可选）
         **tool_args: 工具参数
         
     Returns:
         Dict[str, Any]: 工具执行结果
     """
-    async with SimpleClient(server_script, alias) as client:
+    async with SimpleClient(server_script, alias, config_dir) as client:
         return await client.call(tool_name, **tool_args)
 
 
 async def quick_get(server_script: str,
                    config_key: str,
                    alias: Optional[str] = None,
+                   config_dir: Optional[str] = None,
                    default: Any = None) -> Any:
     """
     快速获取配置值
@@ -264,19 +284,21 @@ async def quick_get(server_script: str,
         server_script: 服务器脚本路径
         config_key: 配置项键名
         alias: 服务器别名（可选）
+        config_dir: 自定义配置目录路径（可选）
         default: 默认值
         
     Returns:
         Any: 配置项的值
     """
-    async with SimpleClient(server_script, alias) as client:
+    async with SimpleClient(server_script, alias, config_dir) as client:
         return await client.get(config_key, default)
 
 
 async def quick_set(server_script: str,
                    config_key: str,
                    value: Any,
-                   alias: Optional[str] = None) -> bool:
+                   alias: Optional[str] = None,
+                   config_dir: Optional[str] = None) -> bool:
     """
     快速设置配置值
     
@@ -285,16 +307,18 @@ async def quick_set(server_script: str,
         config_key: 配置项键名
         value: 要设置的值
         alias: 服务器别名（可选）
+        config_dir: 自定义配置目录路径（可选）
         
     Returns:
         bool: 设置是否成功
     """
-    async with SimpleClient(server_script, alias) as client:
+    async with SimpleClient(server_script, alias, config_dir) as client:
         return await client.set(config_key, value)
 
 
 async def quick_update(server_script: str,
                       alias: Optional[str] = None,
+                      config_dir: Optional[str] = None,
                       **config_updates) -> bool:
     """
     快速批量更新配置
@@ -302,12 +326,13 @@ async def quick_update(server_script: str,
     Args:
         server_script: 服务器脚本路径
         alias: 服务器别名（可选）
+        config_dir: 自定义配置目录路径（可选）
         **config_updates: 要更新的配置项
         
     Returns:
         bool: 更新是否成功
     """
-    async with SimpleClient(server_script, alias) as client:
+    async with SimpleClient(server_script, alias, config_dir) as client:
         return await client.update(**config_updates)
 
 

@@ -4,6 +4,7 @@ MCP 框架客户端 SDK
 """
 
 from .base import MCPStdioClient
+from .enhanced import EnhancedMCPStdioClient
 from .config import ConfigClient
 from .tools import ToolsClient
 from .simple import (
@@ -15,6 +16,7 @@ from .simple import (
 __all__ = [
     # 原始客户端类
     'MCPStdioClient',
+    'EnhancedMCPStdioClient',
     'ConfigClient', 
     'ToolsClient',
     

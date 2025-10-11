@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import inspect
 import asyncio
 import uuid
+import sys
 
 from .config import ServerParameter, ServerConfigManager
 from .utils import get_data_dir
@@ -661,17 +662,17 @@ class BaseMCPServer(ABC):
             # 检查是否有外部设置的配置管理器，如果有则重新加载配置
             if hasattr(self, 'server_config_manager') and self.server_config_manager is not None:
                 try:
-                    print(f"🔍 检查外部配置管理器: {self.server_config_manager.config_file}")
+                    print(f"🔍 检查外部配置管理器: {self.server_config_manager.config_file}", file=sys.stderr)
                     if self.server_config_manager.config_exists():
                         config = self.server_config_manager.load_server_config()
-                        print(f"📂 加载的配置内容: {config}")
+                        print(f"📂 加载的配置内容: {config}", file=sys.stderr)
                         result = self.configure_server(config)
-                        print(f"⚙️ 配置应用结果: {result}")
+                        print(f"⚙️ 配置应用结果: {result}", file=sys.stderr)
                         self.logger.info(f"Reloaded configuration from external config manager: {self.server_config_manager.config_file}")
                     else:
-                        print(f"❌ 配置文件不存在: {self.server_config_manager.config_file}")
+                        print(f"❌ 配置文件不存在: {self.server_config_manager.config_file}", file=sys.stderr)
                 except Exception as e:
-                    print(f"❌ 配置加载失败: {e}")
+                    print(f"❌ 配置加载失败: {e}", file=sys.stderr)
                     self.logger.warning(f"Failed to reload config from external config manager: {e}")
             
             await self.initialize()
